@@ -3,7 +3,7 @@ import { createHmac, timingSafeEqual } from "node:crypto";
 export const runtime = "nodejs";
 
 function verifyMarketplaceWebhook(body: string, signature: string | null) {
-  const secret = process.env.MARKETPLACE_WEBHOOK_SECRET;
+  const secret = process.env.GITHUB_WEBHOOK_SECRET;
   if (!secret || !signature?.startsWith("sha256=")) return false;
   const expected = `sha256=${createHmac("sha256", secret)
     .update(body)

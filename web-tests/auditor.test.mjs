@@ -96,7 +96,7 @@ test("Marketplace webhook validates signatures and handles purchases", () => {
     new URL("../app/api/webhooks/marketplace/route.ts", import.meta.url),
     "utf8",
   );
-  assert.match(source, /MARKETPLACE_WEBHOOK_SECRET/);
+  assert.match(source, /GITHUB_WEBHOOK_SECRET/);
   assert.match(source, /timingSafeEqual/);
   assert.match(source, /marketplace_purchase/);
   assert.match(source, /status: 401/);
