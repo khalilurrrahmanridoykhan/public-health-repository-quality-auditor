@@ -1,0 +1,27 @@
+{
+  "name": "public-health-repo-auditor-webhook",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "build:sites": "opennextjs-cloudflare build --skipWranglerConfigCheck",
+    "test:web": "node --test web-tests/*.test.mjs"
+  },
+  "dependencies": {
+    "jose": "6.2.4",
+    "next": "16.2.12",
+    "react": "19.2.8",
+    "react-dom": "19.2.8"
+  },
+  "devDependencies": {
+    "@opennextjs/cloudflare": "1.20.2",
+    "@types/node": "^24.0.0",
+    "@types/react": "^19.0.0",
+    "typescript": "^5.9.0"
+  },
+  "overrides": {
+    "postcss": "8.5.23",
+    "sharp": "0.35.3"
+  }
+}

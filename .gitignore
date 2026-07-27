@@ -8,3 +8,7 @@ __pycache__/
 *.pem
 dist/
 build/
+node_modules/
+.next/
+.open-next/
+.wrangler/

@@ -22,6 +22,9 @@ It checks for:
 
 The auditor produces a score, grade, evidence table, and actionable recommendations as a GitHub Check Run on every push.
 
+The production webhook is implemented as a Next.js API route for OpenAI Sites.
+The Python FastAPI service and CLI remain available for local or self-hosted use.
+
 > [!IMPORTANT]
 > This tool does not certify scientific validity, regulatory compliance, privacy compliance, or research ethics. It helps maintainers identify missing repository-quality signals.
 
