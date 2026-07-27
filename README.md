@@ -97,3 +97,9 @@ pytest
 ```
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) and [SECURITY.md](SECURITY.md).
+
+## Support
+
+For installation help, bug reports, or responsible-use questions, open a
+[GitHub issue](https://github.com/khalilurrrahmanridoykhan/public-health-repository-quality-auditor/issues)
+or email [khalilurrahmanridoykhan@gmail.com](mailto:khalilurrahmanridoykhan@gmail.com).

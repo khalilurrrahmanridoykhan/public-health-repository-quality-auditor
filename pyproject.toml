@@ -10,6 +10,9 @@ readme = "README.md"
 requires-python = ">=3.11"
 license = {text = "MIT"}
 authors = [{name = "Khalilur Rahman Ridoy Khan"}]
+maintainers = [
+  {name = "Khalilur Rahman Ridoy Khan", email = "khalilurrahmanridoykhan@gmail.com"},
+]
 keywords = ["public health", "reproducibility", "github app", "research software"]
 dependencies = [
   "cryptography>=42,<47",
