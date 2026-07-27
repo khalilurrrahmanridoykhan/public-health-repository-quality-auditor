@@ -34,10 +34,10 @@ jobs:
           node-version: "24"
           cache: npm
       - run: npm ci
+      - run: npm run build:sites
       - name: Build and deploy production Worker
         uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           command: deploy
-
