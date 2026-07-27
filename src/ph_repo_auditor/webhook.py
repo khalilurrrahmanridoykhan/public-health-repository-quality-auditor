@@ -51,16 +51,35 @@ async def github_webhook(
 
     if x_github_event == "ping":
         return {"status": "pong"}
-    if x_github_event != "push":
+    if x_github_event not in {"push", "pull_request"}:
         return {"status": "ignored", "event": x_github_event or "unknown"}
 
     payload = await request.json()
-    if payload.get("deleted"):
+    if x_github_event == "push" and payload.get("deleted"):
         return {"status": "ignored", "event": "deleted-ref"}
+    if x_github_event == "pull_request":
+        audited_actions = {
+            "opened",
+            "reopened",
+            "synchronize",
+            "ready_for_review",
+        }
+        action = payload.get("action")
+        if action not in audited_actions:
+            return {
+                "status": "ignored",
+                "event": f"pull_request.{action or 'unknown'}",
+            }
+        if payload.get("pull_request", {}).get("draft"):
+            return {"status": "ignored", "event": "draft-pull-request"}
 
     installation_id = payload.get("installation", {}).get("id")
     repository = payload.get("repository", {}).get("full_name")
-    head_sha = payload.get("after")
+    head_sha = (
+        payload.get("pull_request", {}).get("head", {}).get("sha")
+        if x_github_event == "pull_request"
+        else payload.get("after")
+    )
     if not installation_id or not repository or not head_sha:
         raise HTTPException(422, "Webhook is missing installation, repository, or commit data")
 

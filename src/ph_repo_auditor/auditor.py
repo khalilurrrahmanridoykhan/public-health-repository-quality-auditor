@@ -1,6 +1,6 @@
 from collections.abc import Mapping
 
-from .models import AuditReport, CheckResult
+from .models import AuditPolicy, AuditReport, CheckResult
 
 
 DEPENDENCY_FILES = {
@@ -44,9 +44,21 @@ def _find(paths: set[str], names: set[str]) -> tuple[str, ...]:
 
 
 def audit_repository(
-    repository: str, files: Mapping[str, str | None]
+    repository: str,
+    files: Mapping[str, str | None],
+    policy: AuditPolicy | None = None,
+    policy_warnings: tuple[str, ...] = (),
 ) -> AuditReport:
+    policy = policy or AuditPolicy()
     normalised = _normalise_paths(files)
+    normalised = {
+        path: content
+        for path, content in normalised.items()
+        if not any(
+            path == prefix or path.startswith(f"{prefix}/")
+            for prefix in policy.ignore_paths
+        )
+    }
     paths = set(normalised)
     readme = next(
         (content or "" for path, content in normalised.items() if path in {"readme.md", "readme.rst"}),
@@ -151,4 +163,16 @@ def audit_repository(
             ethics_evidence,
         ),
     ]
-    return AuditReport(repository=repository, results=results)
+    results = [
+        result for result in results if result.key not in policy.disabled_checks
+    ]
+    missing_required_files = tuple(
+        path for path in policy.required_files if path not in paths
+    )
+    return AuditReport(
+        repository=repository,
+        results=results,
+        minimum_score=policy.minimum_score,
+        missing_required_files=missing_required_files,
+        policy_warnings=policy_warnings,
+    )

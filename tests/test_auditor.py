@@ -1,4 +1,6 @@
 from ph_repo_auditor.auditor import audit_repository
+from ph_repo_auditor.models import AuditPolicy
+from ph_repo_auditor.policy import parse_policy
 
 
 def test_complete_repository_scores_highly():
@@ -49,3 +51,48 @@ def test_paths_are_case_insensitive():
     )
 
     assert report.score == 100
+
+
+def test_policy_controls_threshold_checks_paths_and_required_files():
+    policy, warnings = parse_policy(
+        """
+minimum_score: 95
+disabled_checks: [ethics]
+required_files: [CITATION.cff, docs/protocol.md]
+ignore_paths: [generated]
+"""
+    )
+    report = audit_repository(
+        "owner/study",
+        {
+            "README.md": "Data provenance. Privacy.",
+            "LICENSE": None,
+            "CITATION.cff": None,
+            "requirements.txt": None,
+            "Makefile": None,
+            ".github/workflows/ci.yml": None,
+            "docs/codebook.md": None,
+            "generated/tests/test_fake.py": None,
+        },
+        policy,
+        warnings,
+    )
+
+    assert not warnings
+    assert "ethics" not in {result.key for result in report.results}
+    assert report.minimum_score == 95
+    assert report.missing_required_files == ("docs/protocol.md",)
+    assert not report.passed
+
+
+def test_invalid_policy_uses_safe_defaults_and_reports_warnings():
+    policy, warnings = parse_policy(
+        """
+minimum_score: 101
+disabled_checks: [unknown]
+required_files: invalid
+"""
+    )
+
+    assert policy == AuditPolicy()
+    assert len(warnings) == 3

@@ -1,0 +1,15 @@
+minimum_score: 90
+
+disabled_checks: []
+
+required_files:
+  - CITATION.cff
+  - DATA_DICTIONARY.md
+  - Makefile
+
+ignore_paths:
+  - node_modules
+  - .next
+  - .open-next
+  - .venv
+

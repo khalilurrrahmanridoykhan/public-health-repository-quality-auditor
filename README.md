@@ -27,6 +27,8 @@ It checks for:
 - Ethics or IRB statements
 
 The auditor produces a score, grade, evidence table, and actionable recommendations as a GitHub Check Run on every push.
+It also audits non-draft pull requests when they are opened, reopened, marked
+ready for review, or updated with new commits.
 
 The production webhook is implemented as a Next.js API route and deployed on
 [Cloudflare Workers](https://public-health-repo-auditor.khalilur-ridoy.workers.dev).
@@ -102,6 +104,35 @@ GitHub Check Run with score and recommendations
 ## Scoring
 
 The initial rule set uses transparent, deterministic checks totaling 100 points. The score is designed for maintainers and should not be used to rank researchers or institutions. Future versions can support configurable policies for epidemiology, surveillance, modelling, and health-information-system projects.
+
+## Repository policy
+
+Add `.ph-repo-auditor.yml` at the repository root to customize enforcement:
+
+```yaml
+minimum_score: 90
+
+disabled_checks:
+  - ethics
+
+required_files:
+  - CITATION.cff
+  - docs/data_dictionary.md
+
+ignore_paths:
+  - vendor
+  - generated
+```
+
+- `minimum_score` accepts an integer from 0 to 100.
+- `disabled_checks` accepts `readme`, `license`, `citation`, `dependencies`,
+  `reproduction`, `tests`, `data_dictionary`, `provenance`, `privacy`, and
+  `ethics`.
+- `required_files` contains exact repository-relative paths.
+- `ignore_paths` contains repository-relative path prefixes.
+
+Invalid policy values are reported in the Check Run and do not silently weaken
+the default policy.
 
 ## Development
 

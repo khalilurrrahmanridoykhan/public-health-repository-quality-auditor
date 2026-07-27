@@ -1,6 +1,7 @@
 import { createHmac, createPrivateKey, timingSafeEqual } from "node:crypto";
 import { SignJWT } from "jose";
-import { audit } from "./auditor";
+import { parse } from "yaml";
+import { audit, policyFromObject } from "./auditor";
 
 const apiRoot = "https://api.github.com";
 const apiHeaders = {
@@ -101,9 +102,15 @@ export async function auditAndPublish(
     paths.map((path) => [path, null]),
   );
 
-  for (const path of paths.filter((candidate) =>
-    ["readme.md", "readme.rst"].includes(candidate.toLowerCase()),
-  )) {
+  const selectedPaths = paths.filter((candidate) =>
+    [
+      "readme.md",
+      "readme.rst",
+      ".ph-repo-auditor.yml",
+      ".ph-repo-auditor.yaml",
+    ].includes(candidate.toLowerCase()),
+  );
+  for (const path of selectedPaths) {
     const contentResponse = await githubFetch(
       `/repos/${repository}/contents/${path}?ref=${headSha}`,
       token,
@@ -117,14 +124,40 @@ export async function auditAndPublish(
     );
   }
 
-  const report = audit(repository, files);
+  const policyPath = selectedPaths.find((path) =>
+    [".ph-repo-auditor.yml", ".ph-repo-auditor.yaml"].includes(
+      path.toLowerCase(),
+    ),
+  );
+  let policyResult = policyFromObject({});
+  if (!policyPath) {
+    policyResult = { ...policyResult, warnings: [] };
+  } else {
+    try {
+      policyResult = policyFromObject(parse(files.get(policyPath) ?? ""));
+    } catch (error) {
+      policyResult = {
+        ...policyResult,
+        warnings: [
+          `Could not parse \`${policyPath}\`: ${error instanceof Error ? error.message : "invalid YAML"}`,
+        ],
+      };
+    }
+  }
+
+  const report = audit(
+    repository,
+    files,
+    policyResult.policy,
+    policyResult.warnings,
+  );
   await githubFetch(`/repos/${repository}/check-runs`, token, {
     method: "POST",
     body: JSON.stringify({
       name: "Public Health Repository Quality",
       head_sha: headSha,
       status: "completed",
-      conclusion: report.score >= 80 ? "success" : "neutral",
+      conclusion: report.passed ? "success" : "failure",
       output: {
         title: `Quality score: ${report.score}/100 (${report.grade})`,
         summary: report.markdown,

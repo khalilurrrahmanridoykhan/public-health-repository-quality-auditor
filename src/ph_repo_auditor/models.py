@@ -1,6 +1,28 @@
 from dataclasses import dataclass, field
 
 
+CHECK_KEYS = (
+    "readme",
+    "license",
+    "citation",
+    "dependencies",
+    "reproduction",
+    "tests",
+    "data_dictionary",
+    "provenance",
+    "privacy",
+    "ethics",
+)
+
+
+@dataclass(frozen=True)
+class AuditPolicy:
+    minimum_score: int = 80
+    disabled_checks: tuple[str, ...] = ()
+    required_files: tuple[str, ...] = ()
+    ignore_paths: tuple[str, ...] = ()
+
+
 @dataclass(frozen=True)
 class CheckResult:
     key: str
@@ -15,6 +37,9 @@ class CheckResult:
 class AuditReport:
     repository: str
     results: list[CheckResult] = field(default_factory=list)
+    minimum_score: int = 80
+    missing_required_files: tuple[str, ...] = ()
+    policy_warnings: tuple[str, ...] = ()
 
     @property
     def score(self) -> int:
@@ -34,11 +59,23 @@ class AuditReport:
             return "D"
         return "F"
 
+    @property
+    def passed(self) -> bool:
+        return (
+            self.score >= self.minimum_score
+            and not self.missing_required_files
+            and not self.policy_warnings
+        )
+
     def to_dict(self) -> dict:
         return {
             "repository": self.repository,
             "score": self.score,
             "grade": self.grade,
+            "passed": self.passed,
+            "minimum_score": self.minimum_score,
+            "missing_required_files": list(self.missing_required_files),
+            "policy_warnings": list(self.policy_warnings),
             "checks": [
                 {
                     "key": item.key,
@@ -71,11 +108,30 @@ class AuditReport:
             [
                 f"## Public Health Repository Quality: {self.score}/100 ({self.grade})",
                 "",
+                f"Policy threshold: **{self.minimum_score}/100** · Result: **{'Pass' if self.passed else 'Needs work'}**",
+                "",
                 *rows,
+                "",
+                "### Required files",
+                "",
+                *(
+                    [f"- Missing required file: `{path}`" for path in self.missing_required_files]
+                    or ["- All configured required files are present."]
+                ),
                 "",
                 "### Recommended next steps",
                 "",
                 *recommendations,
+                *(
+                    [
+                        "",
+                        "### Policy warnings",
+                        "",
+                        *[f"- {warning}" for warning in self.policy_warnings],
+                    ]
+                    if self.policy_warnings
+                    else []
+                ),
                 "",
                 "_This automated review supports maintainers; it does not certify scientific validity, privacy compliance, or research ethics._",
             ]

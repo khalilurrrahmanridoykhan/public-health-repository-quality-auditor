@@ -5,6 +5,7 @@ import json
 from pathlib import Path
 
 from .auditor import audit_repository
+from .policy import parse_policy
 
 
 TEXT_FILE_NAMES = {
@@ -13,6 +14,8 @@ TEXT_FILE_NAMES = {
     "data_dictionary.md",
     "data-dictionary.md",
     "codebook.md",
+    ".ph-repo-auditor.yml",
+    ".ph-repo-auditor.yaml",
 }
 
 
@@ -38,7 +41,12 @@ def main() -> None:
     args = parser.parse_args()
 
     root = Path(args.path).resolve()
-    report = audit_repository(root.name, scan_directory(root))
+    files = scan_directory(root)
+    policy_content = files.get(".ph-repo-auditor.yml")
+    if policy_content is None:
+        policy_content = files.get(".ph-repo-auditor.yaml")
+    policy, warnings = parse_policy(policy_content)
+    report = audit_repository(root.name, files, policy, warnings)
     if args.as_json:
         print(json.dumps(report.to_dict(), indent=2))
     else:

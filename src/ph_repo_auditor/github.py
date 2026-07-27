@@ -9,6 +9,7 @@ import jwt
 
 from .auditor import audit_repository
 from .models import AuditReport
+from .policy import parse_policy
 
 
 API_ROOT = "https://api.github.com"
@@ -73,6 +74,8 @@ class GitHubAppClient:
             path
             for path in file_paths
             if path.lower() in {"readme.md", "readme.rst"}
+            or path.lower()
+            in {".ph-repo-auditor.yml", ".ph-repo-auditor.yaml"}
             or path.lower().endswith(
                 ("data_dictionary.md", "data-dictionary.md", "codebook.md")
             )
@@ -88,7 +91,19 @@ class GitHubAppClient:
             encoded = response.json().get("content", "")
             files[path] = base64.b64decode(encoded).decode("utf-8", errors="replace")
 
-        return audit_repository(repository, files)
+        policy_path = next(
+            (
+                path
+                for path in selected
+                if path.lower()
+                in {".ph-repo-auditor.yml", ".ph-repo-auditor.yaml"}
+            ),
+            None,
+        )
+        policy, warnings = parse_policy(
+            files.get(policy_path) if policy_path else None
+        )
+        return audit_repository(repository, files, policy, warnings)
 
     def publish_check(
         self,
@@ -98,7 +113,7 @@ class GitHubAppClient:
         report: AuditReport,
     ) -> None:
         token = self.installation_token(installation_id)
-        conclusion = "success" if report.score >= 80 else "neutral"
+        conclusion = "success" if report.passed else "failure"
         response = self._client.post(
             f"/repos/{repository}/check-runs",
             headers=self._installation_headers(token),

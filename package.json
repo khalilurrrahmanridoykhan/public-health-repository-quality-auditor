@@ -6,13 +6,14 @@
     "dev": "next dev",
     "build": "next build",
     "build:sites": "opennextjs-cloudflare build",
-    "test:web": "node --test web-tests/*.test.mjs"
+    "test:web": "node --experimental-strip-types --test web-tests/*.test.mjs"
   },
   "dependencies": {
     "jose": "6.2.4",
     "next": "15.5.22",
     "react": "19.2.8",
-    "react-dom": "19.2.8"
+    "react-dom": "19.2.8",
+    "yaml": "^2.8.1"
   },
   "devDependencies": {
     "@opennextjs/cloudflare": "1.20.2",
