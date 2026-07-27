@@ -90,3 +90,14 @@ test("check runs include annotations and previous-score comparison", () => {
   assert.match(source, /annotations/);
   assert.match(source, /Score change from previous audited commit/);
 });
+
+test("Marketplace webhook validates signatures and handles purchases", () => {
+  const source = readFileSync(
+    new URL("../app/api/webhooks/marketplace/route.ts", import.meta.url),
+    "utf8",
+  );
+  assert.match(source, /MARKETPLACE_WEBHOOK_SECRET/);
+  assert.match(source, /timingSafeEqual/);
+  assert.match(source, /marketplace_purchase/);
+  assert.match(source, /status: 401/);
+});
