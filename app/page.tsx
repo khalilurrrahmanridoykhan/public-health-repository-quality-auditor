@@ -20,6 +20,7 @@ export default function Home() {
           improve reproducibility, documentation, and responsible data use.
         </p>
         <div className="actions">
+          <a href="/dashboard">Open dashboard</a>
           <a href="https://github.com/apps/public-health-repo-auditor">
             View GitHub App
           </a>
@@ -52,6 +53,11 @@ export default function Home() {
           ethics.
         </p>
       </section>
+      <footer>
+        <a href="/privacy">Privacy</a>
+        <a href="/terms">Terms</a>
+        <a href="/support">Support</a>
+      </footer>
     </main>
   );
 }

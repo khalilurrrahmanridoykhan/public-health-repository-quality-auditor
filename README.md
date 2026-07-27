@@ -122,6 +122,11 @@ required_files:
 ignore_paths:
   - vendor
   - generated
+
+privacy_terms:
+  - privacy
+  - de-identified
+  - aggregate health data
 ```
 
 - `minimum_score` accepts an integer from 0 to 100.
@@ -130,9 +135,70 @@ ignore_paths:
   `ethics`.
 - `required_files` contains exact repository-relative paths.
 - `ignore_paths` contains repository-relative path prefixes.
+- `privacy_terms` adds repository-specific phrases that satisfy the privacy
+  documentation check.
 
 Invalid policy values are reported in the Check Run and do not silently weaken
 the default policy.
+
+## Audit guidance
+
+### Project documentation
+
+Add a root README that explains the public-health question, methods, data,
+expected outputs, limitations, and exact usage steps.
+
+### License
+
+Add a software license and state separately whether included datasets have
+different access or reuse conditions.
+
+### Citation
+
+Add `CITATION.cff` or `codemeta.json` with authors, title, version, and the
+preferred citation.
+
+### Dependencies
+
+Commit a supported dependency specification such as `requirements.txt`,
+`pyproject.toml`, `environment.yml`, `renv.lock`, or `package-lock.json`.
+
+### Reproduction
+
+Provide a Makefile or workflow with one documented command that regenerates
+the reported outputs.
+
+### Tests and CI
+
+Add automated tests and CI for data validation, transformations, and important
+analytical invariants.
+
+### Data dictionary
+
+Document every variable, type, unit, missing-value convention, and allowed
+value or category.
+
+### Data provenance
+
+Record each data source, access date, license, geographic and temporal scope,
+and transformation.
+
+### Privacy
+
+State whether data are aggregate, synthetic, de-identified, person-level, or
+sensitive. Explain access controls and safe-use limits where applicable.
+
+### Ethics
+
+State the ethics or IRB basis, consent status, approval identifier when
+appropriate, or why review was not required.
+
+## Hosted service
+
+- [Onboarding and manual-audit dashboard](https://public-health-repo-auditor.khalilur-ridoy.workers.dev/dashboard)
+- [Privacy policy](https://public-health-repo-auditor.khalilur-ridoy.workers.dev/privacy)
+- [Terms of service](https://public-health-repo-auditor.khalilur-ridoy.workers.dev/terms)
+- [Support](https://public-health-repo-auditor.khalilur-ridoy.workers.dev/support)
 
 ## Development
 

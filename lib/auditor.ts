@@ -20,14 +20,16 @@ export type AuditPolicy = {
   disabledChecks: CheckKey[];
   requiredFiles: string[];
   ignorePaths: string[];
+  privacyTerms: string[];
 };
 
-type Result = {
+export type Result = {
   key: CheckKey;
   title: string;
   passed: boolean;
   points: number;
   recommendation: string;
+  documentationUrl: string;
 };
 
 const defaultPolicy: AuditPolicy = {
@@ -35,6 +37,14 @@ const defaultPolicy: AuditPolicy = {
   disabledChecks: [],
   requiredFiles: [],
   ignorePaths: [],
+  privacyTerms: [
+    "privacy",
+    "de-ident",
+    "anonym",
+    "patient",
+    "person-level",
+    "sensitive data",
+  ],
 };
 
 const dependencyFiles = new Set([
@@ -123,6 +133,11 @@ export function policyFromObject(value: unknown): {
     "ignore_paths",
     warnings,
   ).map(cleanPath);
+  const configuredPrivacyTerms = stringList(
+    source.privacy_terms,
+    "privacy_terms",
+    warnings,
+  ).map((term) => term.trim().toLowerCase());
 
   return {
     policy: {
@@ -130,6 +145,9 @@ export function policyFromObject(value: unknown): {
       disabledChecks: [...new Set(disabledChecks)],
       requiredFiles: [...new Set(requiredFiles)],
       ignorePaths: [...new Set(ignorePaths)],
+      privacyTerms: configuredPrivacyTerms.length
+        ? [...new Set(configuredPrivacyTerms)]
+        : [...defaultPolicy.privacyTerms],
     },
     warnings,
   };
@@ -167,6 +185,7 @@ export function audit(
       points: 12,
       recommendation:
         "Add a README explaining the research question, methods, data, and usage.",
+      documentationUrl: "https://github.com/khalilurrrahmanridoykhan/public-health-repository-quality-auditor#project-documentation",
     },
     {
       key: "license",
@@ -178,6 +197,7 @@ export function audit(
       points: 10,
       recommendation:
         "Add a LICENSE and clarify whether data have separate reuse terms.",
+      documentationUrl: "https://github.com/khalilurrrahmanridoykhan/public-health-repository-quality-auditor#license",
     },
     {
       key: "citation",
@@ -186,6 +206,7 @@ export function audit(
       points: 8,
       recommendation:
         "Add CITATION.cff with authors, title, version, and preferred citation.",
+      documentationUrl: "https://github.com/khalilurrrahmanridoykhan/public-health-repository-quality-auditor#citation",
     },
     {
       key: "dependencies",
@@ -194,6 +215,7 @@ export function audit(
       points: 12,
       recommendation:
         "Add a dependency or environment file with compatible version ranges.",
+      documentationUrl: "https://github.com/khalilurrrahmanridoykhan/public-health-repository-quality-auditor#dependencies",
     },
     {
       key: "reproduction",
@@ -208,6 +230,7 @@ export function audit(
       points: 14,
       recommendation:
         "Provide a Makefile, workflow, or documented single command that regenerates outputs.",
+      documentationUrl: "https://github.com/khalilurrrahmanridoykhan/public-health-repository-quality-auditor#reproduction",
     },
     {
       key: "tests",
@@ -221,6 +244,7 @@ export function audit(
       points: 12,
       recommendation:
         "Add tests and CI for data validation and analytical invariants.",
+      documentationUrl: "https://github.com/khalilurrrahmanridoykhan/public-health-repository-quality-auditor#tests-and-ci",
     },
     {
       key: "data_dictionary",
@@ -231,6 +255,7 @@ export function audit(
       points: 10,
       recommendation:
         "Document variables, units, missing-value conventions, and allowed values.",
+      documentationUrl: "https://github.com/khalilurrrahmanridoykhan/public-health-repository-quality-auditor#data-dictionary",
     },
     {
       key: "provenance",
@@ -241,21 +266,16 @@ export function audit(
       points: 8,
       recommendation:
         "Document each data source, access date, transformation, and license.",
+      documentationUrl: "https://github.com/khalilurrrahmanridoykhan/public-health-repository-quality-auditor#data-provenance",
     },
     {
       key: "privacy",
       title: "Privacy and sensitive-data warning",
-      passed: [
-        "privacy",
-        "de-ident",
-        "anonym",
-        "patient",
-        "person-level",
-        "sensitive data",
-      ].some((term) => text.includes(term)),
+      passed: policy.privacyTerms.some((term) => text.includes(term)),
       points: 8,
       recommendation:
         "State whether data are aggregate, synthetic, de-identified, or sensitive.",
+      documentationUrl: "https://github.com/khalilurrrahmanridoykhan/public-health-repository-quality-auditor#privacy",
     },
     {
       key: "ethics",
@@ -266,6 +286,7 @@ export function audit(
       points: 6,
       recommendation:
         "State the ethics/IRB basis or explain why review was not required.",
+      documentationUrl: "https://github.com/khalilurrrahmanridoykhan/public-health-repository-quality-auditor#ethics",
     },
   ];
   const results = allResults.filter(
@@ -304,7 +325,10 @@ export function audit(
   const recommendations =
     results
       .filter((result) => !result.passed)
-      .map((result) => `- **${result.title}:** ${result.recommendation}`)
+      .map(
+        (result) =>
+          `- **${result.title}:** ${result.recommendation} [Guidance](${result.documentationUrl})`,
+      )
       .join("\n") || "- All configured quality checks passed.";
   const requiredSummary = missingRequiredFiles.length
     ? missingRequiredFiles.map((path) => `- Missing required file: \`${path}\``).join("\n")
@@ -320,6 +344,7 @@ export function audit(
     passed,
     minimumScore: policy.minimumScore,
     missingRequiredFiles,
+    results,
     markdown: `## Public Health Repository Quality: ${score}/100 (${grade})
 
 Policy threshold: **${policy.minimumScore}/100** · Result: **${passed ? "Pass" : "Needs work"}**

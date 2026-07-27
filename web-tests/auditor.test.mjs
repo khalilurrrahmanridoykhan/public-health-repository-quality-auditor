@@ -30,6 +30,7 @@ test("repository policy controls threshold, disabled checks, and required files"
     disabled_checks: ["ethics"],
     required_files: ["CITATION.cff", "docs/protocol.md"],
     ignore_paths: ["generated"],
+    privacy_terms: ["aggregate health data"],
   });
   const report = audit(
     "owner/repo",
@@ -52,6 +53,8 @@ test("repository policy controls threshold, disabled checks, and required files"
   assert.deepEqual(report.missingRequiredFiles, ["docs/protocol.md"]);
   assert.equal(report.passed, false);
   assert.doesNotMatch(report.markdown, /Ethics statement/);
+  assert.deepEqual(policy.privacyTerms, ["aggregate health data"]);
+  assert.match(report.markdown, /\[Guidance\]\(/);
 });
 
 test("invalid policy values use safe defaults and produce warnings", () => {
@@ -64,4 +67,26 @@ test("invalid policy values use safe defaults and produce warnings", () => {
   assert.equal(policy.minimumScore, 80);
   assert.deepEqual(policy.disabledChecks, []);
   assert.equal(warnings.length, 3);
+});
+
+test("dashboard exposes public repository listing and manual audit routes", () => {
+  const repositoryRoute = readFileSync(
+    new URL("../app/api/repositories/route.ts", import.meta.url),
+    "utf8",
+  );
+  const auditRoute = readFileSync(
+    new URL("../app/api/audits/route.ts", import.meta.url),
+    "utf8",
+  );
+  assert.match(repositoryRoute, /listPublicInstalledRepositories/);
+  assert.match(auditRoute, /auditPublicRepository/);
+});
+
+test("check runs include annotations and previous-score comparison", () => {
+  const source = readFileSync(
+    new URL("../lib/github-app.ts", import.meta.url),
+    "utf8",
+  );
+  assert.match(source, /annotations/);
+  assert.match(source, /Score change from previous audited commit/);
 });

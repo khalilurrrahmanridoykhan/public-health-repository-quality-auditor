@@ -66,12 +66,21 @@ def parse_policy(content: str | None) -> tuple[AuditPolicy, tuple[str, ...]]:
         _clean_path(path)
         for path in _string_list(source, "ignore_paths", warnings)
     ]
+    privacy_terms = [
+        term.strip().lower()
+        for term in _string_list(source, "privacy_terms", warnings)
+    ]
     return (
         AuditPolicy(
             minimum_score=minimum_score,
             disabled_checks=tuple(dict.fromkeys(disabled_checks)),
             required_files=tuple(dict.fromkeys(required_files)),
             ignore_paths=tuple(dict.fromkeys(ignore_paths)),
+            privacy_terms=(
+                tuple(dict.fromkeys(privacy_terms))
+                if privacy_terms
+                else AuditPolicy().privacy_terms
+            ),
         ),
         tuple(warnings),
     )

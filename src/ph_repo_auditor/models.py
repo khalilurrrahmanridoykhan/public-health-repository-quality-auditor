@@ -21,6 +21,14 @@ class AuditPolicy:
     disabled_checks: tuple[str, ...] = ()
     required_files: tuple[str, ...] = ()
     ignore_paths: tuple[str, ...] = ()
+    privacy_terms: tuple[str, ...] = (
+        "privacy",
+        "de-ident",
+        "anonym",
+        "patient",
+        "person-level",
+        "sensitive data",
+    )
 
 
 @dataclass(frozen=True)

@@ -73,7 +73,9 @@ def audit_repository(
     test_files = tuple(
         sorted(path for path in paths if path.startswith(TEST_PREFIXES))
     )
-    privacy_evidence = tuple(term for term in PRIVACY_TERMS if term in readme)
+    privacy_evidence = tuple(
+        term for term in policy.privacy_terms if term in readme
+    )
     ethics_evidence = tuple(term for term in ETHICS_TERMS if term in readme)
     source_evidence = tuple(
         term for term in ("data source", "data provenance", "source data") if term in readme

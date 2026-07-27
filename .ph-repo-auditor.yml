@@ -13,3 +13,8 @@ ignore_paths:
   - .open-next
   - .venv
 
+privacy_terms:
+  - privacy
+  - de-ident
+  - anonym
+  - sensitive data
