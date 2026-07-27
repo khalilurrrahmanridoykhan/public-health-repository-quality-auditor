@@ -22,7 +22,8 @@ It checks for:
 
 The auditor produces a score, grade, evidence table, and actionable recommendations as a GitHub Check Run on every push.
 
-The production webhook is implemented as a Next.js API route for OpenAI Sites.
+The production webhook is implemented as a Next.js API route and deployed on
+[Cloudflare Workers](https://public-health-repo-auditor.khalilur-ridoy.workers.dev).
 The Python FastAPI service and CLI remain available for local or self-hosted use.
 
 > [!IMPORTANT]
@@ -101,6 +102,13 @@ The initial rule set uses transparent, deterministic checks totaling 100 points.
 ```bash
 python -m pip install -e ".[dev]"
 pytest
+```
+
+To install dependencies, run every test, and build the production worker with
+one command:
+
+```bash
+make reproduce
 ```
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) and [SECURITY.md](SECURITY.md).

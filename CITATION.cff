@@ -1,0 +1,19 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it using the metadata below."
+title: "Public Health Repository Quality Auditor"
+type: software
+version: 0.1.0
+date-released: 2026-07-27
+license: MIT
+authors:
+  - family-names: Khan
+    given-names: Khalilur Rahman Ridoy
+    orcid: "https://orcid.org/0009-0000-6742-6207"
+repository-code: "https://github.com/khalilurrrahmanridoykhan/public-health-repository-quality-auditor"
+url: "https://public-health-repo-auditor.khalilur-ridoy.workers.dev"
+keywords:
+  - public health
+  - reproducibility
+  - research software
+  - GitHub App
+
