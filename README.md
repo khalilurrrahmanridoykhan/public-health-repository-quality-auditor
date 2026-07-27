@@ -6,6 +6,8 @@
 
 A GitHub App and local CLI that reviews public-health research repositories for practical reproducibility, documentation, data governance, and software-quality signals.
 
+[**View the registered GitHub App →**](https://github.com/apps/public-health-repo-auditor)
+
 It checks for:
 
 - Project documentation and data provenance
@@ -49,18 +51,20 @@ GitHub webhook endpoint: `POST /webhooks/github`
 
 ## Register the GitHub App
 
-1. Open **GitHub → Settings → Developer settings → GitHub Apps → New GitHub App**.
-2. Name the app `Public Health Repository Quality Auditor`.
-3. Set the homepage to this repository.
-4. Set the webhook URL to your deployed `/webhooks/github` endpoint.
-5. Generate a strong webhook secret and store the same value in `GITHUB_WEBHOOK_SECRET`.
-6. Grant repository permissions:
+The app is registered as [Public Health Repo Auditor](https://github.com/apps/public-health-repo-auditor) with App ID `4402855`.
+
+To finish activating it:
+
+1. Deploy this service to a public HTTPS endpoint.
+2. Set the app's webhook URL to the deployed `/webhooks/github` endpoint.
+3. Set a strong webhook secret and store the same value in `GITHUB_WEBHOOK_SECRET`.
+4. Confirm these repository permissions:
    - **Contents:** Read-only
    - **Checks:** Read and write
    - **Metadata:** Read-only
-7. Subscribe to the **Push** event.
-8. Create the app, generate a private key, and configure `GITHUB_APP_ID` and `GITHUB_PRIVATE_KEY`.
-9. Install the app on selected research repositories.
+5. Subscribe to the **Push** event.
+6. Generate a private key and configure it as `GITHUB_PRIVATE_KEY`.
+7. Install the app on selected research repositories.
 
 Use a secrets manager in production. Never commit the private key or webhook secret.
 
