@@ -1,5 +1,9 @@
 # Public Health Repository Quality Auditor
 
+<p align="center">
+  <img src="assets/app-logo.png" width="220" alt="Public Health Repository Quality Auditor logo">
+</p>
+
 [![CI](https://github.com/khalilurrrahmanridoykhan/public-health-repository-quality-auditor/actions/workflows/ci.yml/badge.svg)](https://github.com/khalilurrrahmanridoykhan/public-health-repository-quality-auditor/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Python 3.11+](https://img.shields.io/badge/Python-3.11%2B-3776AB?logo=python&logoColor=white)](https://www.python.org/)
@@ -7,6 +11,8 @@
 A GitHub App and local CLI that reviews public-health research repositories for practical reproducibility, documentation, data governance, and software-quality signals.
 
 [**View the registered GitHub App →**](https://github.com/apps/public-health-repo-auditor)
+
+![Production homepage](assets/production-homepage.png)
 
 It checks for:
 
