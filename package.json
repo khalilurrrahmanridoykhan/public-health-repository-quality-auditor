@@ -10,7 +10,7 @@
   },
   "dependencies": {
     "jose": "6.2.4",
-    "next": "16.2.12",
+    "next": "15.5.22",
     "react": "19.2.8",
     "react-dom": "19.2.8"
   },
