@@ -42,11 +42,18 @@ Free
 - Terms: https://public-health-repo-auditor.khalilur-ridoy.workers.dev/terms
 - Support: https://public-health-repo-auditor.khalilur-ridoy.workers.dev/support
 
+## Assets
+
+- Logo: `assets/app-logo.png`
+- Feature card (965 × 482): `assets/marketplace-feature-card.png`
+- Product screenshot: `assets/production-homepage.png`
+
 ## Submission checklist
 
-- GitHub App is publicly installable.
+- GitHub App visibility is changed from private to public by the owner.
 - App logo and description are configured.
 - Homepage, setup, privacy, terms, and support URLs are live.
 - Webhook delivery and Check Runs have been tested.
 - Marketplace listing copy and screenshots are ready.
 - Publisher verification and Marketplace agreement are completed by the owner.
+- GitHub's recommended installation threshold is reached before review.
