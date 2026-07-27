@@ -5,7 +5,7 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
-    "build:sites": "opennextjs-cloudflare build --skipWranglerConfigCheck",
+    "build:sites": "opennextjs-cloudflare build",
     "test:web": "node --test web-tests/*.test.mjs"
   },
   "dependencies": {
