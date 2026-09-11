@@ -14,6 +14,8 @@ from .policy import parse_policy
 
 API_ROOT = "https://api.github.com"
 API_VERSION = "2022-11-28"
+MAX_ANNOTATIONS = 50
+_ANNOTATION_LEVELS = {"error": "failure", "warning": "warning", "info": "notice"}
 
 
 @dataclass(frozen=True)
@@ -114,6 +116,28 @@ class GitHubAppClient:
     ) -> None:
         token = self.installation_token(installation_id)
         conclusion = "success" if report.passed else "failure"
+        annotatable = [finding for finding in report.findings if finding.file]
+        annotations = [
+            {
+                "path": finding.file,
+                "start_line": finding.line or 1,
+                "end_line": finding.line or 1,
+                "annotation_level": _ANNOTATION_LEVELS.get(
+                    finding.severity, "warning"
+                ),
+                "title": finding.title,
+                "message": finding.message,
+                "raw_details": finding.docs_url,
+            }
+            for finding in annotatable[:MAX_ANNOTATIONS]
+        ]
+        summary = report.to_markdown()
+        remaining = len(annotatable) - len(annotations)
+        if remaining > 0:
+            summary += (
+                f"\n\n_...and {remaining} more finding(s) not shown as inline "
+                "annotations._"
+            )
         response = self._client.post(
             f"/repos/{repository}/check-runs",
             headers=self._installation_headers(token),
@@ -124,7 +148,8 @@ class GitHubAppClient:
                 "conclusion": conclusion,
                 "output": {
                     "title": f"Quality score: {report.score}/100 ({report.grade})",
-                    "summary": report.to_markdown(),
+                    "summary": summary,
+                    "annotations": annotations,
                 },
             },
         )
