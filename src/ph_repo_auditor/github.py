@@ -9,12 +9,16 @@ import jwt
 
 from .auditor import audit_repository
 from .models import AuditReport
+from .packs.fhir import FSH_CONFIG_NAMES, _is_fhir_relevant_json
 from .policy import parse_policy
 
 
 API_ROOT = "https://api.github.com"
 API_VERSION = "2022-11-28"
 MAX_ANNOTATIONS = 50
+# Each of these needs its own Contents API call, so cap how many pack-relevant
+# files (beyond README/policy) get fetched per audit.
+MAX_PACK_FILES = 200
 _ANNOTATION_LEVELS = {"error": "failure", "warning": "warning", "info": "notice"}
 
 
@@ -72,7 +76,7 @@ class GitHubAppClient:
             if item.get("type") == "blob"
         ]
 
-        selected = {
+        core_selected = {
             path
             for path in file_paths
             if path.lower() in {"readme.md", "readme.rst"}
@@ -82,6 +86,14 @@ class GitHubAppClient:
                 ("data_dictionary.md", "data-dictionary.md", "codebook.md")
             )
         }
+        fhir_relevant = sorted(
+            path
+            for path in file_paths
+            if path.rsplit("/", 1)[-1] in FSH_CONFIG_NAMES
+            or path.endswith(".fsh")
+            or _is_fhir_relevant_json(path)
+        )
+        selected = core_selected | set(fhir_relevant[:MAX_PACK_FILES])
         files: dict[str, str | None] = {path: None for path in file_paths}
         for path in selected:
             response = self._client.get(
