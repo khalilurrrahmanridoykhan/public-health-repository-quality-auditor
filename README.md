@@ -44,8 +44,21 @@ python3 -m venv .venv
 source .venv/bin/activate
 python -m pip install -e ".[dev]"
 ph-repo-audit /path/to/research-repository
-ph-repo-audit /path/to/research-repository --json
+ph-repo-audit /path/to/research-repository --format json
+ph-repo-audit /path/to/research-repository --format sarif
+ph-repo-audit /path/to/research-repository --sarif findings.sarif   # write SARIF, still print markdown
+ph-repo-audit /path/to/research-repository --pack hygiene           # repeatable; default: every detected pack
 ```
+
+## Architecture: packs
+
+Checks are grouped into **packs**. Each repository is audited by whichever
+packs detect themselves on it — today that's just `hygiene` (the 10 checks
+above); platform-aware packs (FHIR, DHIS2, OpenMRS, ...) are planned. Every
+pack emits `Finding`s (severity, category, file, line, rule ID, fix, docs
+link) in addition to `hygiene`'s point-scored `CheckResult`s, so output is
+available as Markdown, JSON, and [SARIF 2.1.0](https://sarifweb.azurewebsites.net/)
+for GitHub code scanning.
 
 ## Run the webhook service
 
