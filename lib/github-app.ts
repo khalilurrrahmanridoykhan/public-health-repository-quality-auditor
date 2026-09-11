@@ -185,18 +185,24 @@ export async function auditAndPublish(
     selectedPaths.find((path) =>
       ["readme.md", "readme.rst"].includes(path.toLowerCase()),
     ) ?? paths[0];
-  const annotations = report.results
-    .filter((result) => !result.passed && readmePath)
-    .slice(0, 50)
-    .map((result) => ({
-      path: readmePath,
-      start_line: 1,
-      end_line: 1,
-      annotation_level: "warning",
-      title: result.title,
-      message: result.recommendation,
-      raw_details: result.documentationUrl,
-    }));
+  const MAX_ANNOTATIONS = 50;
+  const annotatable = readmePath
+    ? report.results.filter((result) => !result.passed)
+    : [];
+  const annotations = annotatable.slice(0, MAX_ANNOTATIONS).map((result) => ({
+    path: readmePath,
+    start_line: 1,
+    end_line: 1,
+    annotation_level: "warning",
+    title: result.title,
+    message: result.recommendation,
+    raw_details: result.documentationUrl,
+  }));
+  const remaining = annotatable.length - annotations.length;
+  const overflowNote =
+    remaining > 0
+      ? `\n\n_...and ${remaining} more finding(s) not shown as inline annotations._`
+      : "";
   await githubFetch(`/repos/${repository}/check-runs`, token, {
     method: "POST",
     body: JSON.stringify({
@@ -206,7 +212,7 @@ export async function auditAndPublish(
       conclusion: report.passed ? "success" : "failure",
       output: {
         title: `Quality score: ${report.score}/100 (${report.grade})`,
-        summary: `${report.markdown}${delta}`,
+        summary: `${report.markdown}${delta}${overflowNote}`,
         annotations,
       },
     }),
