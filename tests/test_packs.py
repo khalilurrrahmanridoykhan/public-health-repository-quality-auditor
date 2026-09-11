@@ -18,8 +18,8 @@ def test_registry_defaults_to_every_detecting_pack():
 
 def test_registry_rejects_unknown_pack_id():
     repo = RepoView({})
-    with pytest.raises(ValueError, match="fhir"):
-        PackRegistry().select(repo, ("fhir",))
+    with pytest.raises(ValueError, match="dhis2"):
+        PackRegistry().select(repo, ("dhis2",))
 
 
 def test_registry_can_select_a_subset_of_packs():
