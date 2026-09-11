@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 from .base import Pack, RepoView
+from .fhir import FhirPack
 from .hygiene import HygienePack
 
-DEFAULT_PACKS: tuple[Pack, ...] = (HygienePack(),)
+DEFAULT_PACKS: tuple[Pack, ...] = (HygienePack(), FhirPack())
 
 
 class PackRegistry:

@@ -53,11 +53,12 @@ ph-repo-audit /path/to/research-repository --pack hygiene           # repeatable
 ## Architecture: packs
 
 Checks are grouped into **packs**. Each repository is audited by whichever
-packs detect themselves on it — today that's just `hygiene` (the 10 checks
-above); platform-aware packs (FHIR, DHIS2, OpenMRS, ...) are planned. Every
-pack emits `Finding`s (severity, category, file, line, rule ID, fix, docs
-link) in addition to `hygiene`'s point-scored `CheckResult`s, so output is
-available as Markdown, JSON, and [SARIF 2.1.0](https://sarifweb.azurewebsites.net/)
+packs detect themselves on it — `hygiene` (the 10 checks above) always
+applies, and `fhir` (see below) activates on FHIR Implementation Guide /
+package repositories. More platform packs (DHIS2, OpenMRS, ...) are planned.
+Every pack emits `Finding`s (severity, category, file, line, rule ID, fix,
+docs link) in addition to `hygiene`'s point-scored `CheckResult`s, so output
+is available as Markdown, JSON, and [SARIF 2.1.0](https://sarifweb.azurewebsites.net/)
 for GitHub code scanning.
 
 ## Run the webhook service
@@ -146,6 +147,8 @@ privacy_terms:
 - `disabled_checks` accepts `readme`, `license`, `citation`, `dependencies`,
   `reproduction`, `tests`, `data_dictionary`, `provenance`, `privacy`, and
   `ethics`.
+- `disabled_packs` accepts `hygiene` and `fhir` — turns an entire pack off
+  regardless of whether it would otherwise detect itself on the repository.
 - `required_files` contains exact repository-relative paths.
 - `ignore_paths` contains repository-relative path prefixes.
 - `privacy_terms` adds repository-specific phrases that satisfy the privacy
@@ -153,6 +156,82 @@ privacy_terms:
 
 Invalid policy values are reported in the Check Run and do not silently weaken
 the default policy.
+
+## FHIR pack
+
+Detected automatically when the repository has a `sushi-config.yaml`/`.yml`,
+any `.fsh` file, or a conformance-named JSON file (e.g.
+`StructureDefinition-*.json`). Runs entirely offline — no HL7 validator JAR,
+no SUSHI invocation, no ValueSet expansion — so it's fast but deliberately
+narrower than a full FHIR validator. It inspects `sushi-config.yaml` and any
+JSON FHIR resource under an `examples/`, `fsh-generated/`, `fhir/`,
+`resources/`, or `tests/` directory (or matching a conformance filename).
+
+| Rule | Severity | What it catches |
+| :--- | :--- | :--- |
+| `fhir/missing-profile-meta` | warning | An example instance has no `meta.profile`, so conformance can't be checked. |
+| `fhir/unresolved-canonical` | error | A profile/ValueSet/binding references a canonical under the IG's own root that no resource in the repo defines. |
+| `fhir/unpinned-dependency` | warning | A `sushi-config.yaml` dependency has no exact version (`current`, a range, or missing). |
+| `fhir/invalid-fhir-version` | error | `fhirVersion` isn't a released FHIR version or recognised alias (R4, R4B, R5). |
+| `fhir/version-mismatch` | error | An `ImplementationGuide` resource's `fhirVersion` disagrees with `sushi-config.yaml`. |
+| `fhir/slicing-no-discriminator` | warning | A `StructureDefinition` slices an element with no `slicing.discriminator`. |
+| `fhir/pii-in-example` | error | A `Patient`/`RelatedPerson`/`Person` example has a realistic-looking identifier (not an obviously-fake placeholder) and no test-data marker. |
+| `fhir/invalid-json` | error | A FHIR-relevant `.json` file doesn't parse. |
+| `fhir/fsh-compile-skipped` | info | `.fsh` files exist but SUSHI isn't on `PATH`, so they weren't compiled to check for errors. |
+
+**Deferred to a later pass** (each needs a tool this pack doesn't assume is
+available): `$validate`-based conformance checking (HL7 validator JAR),
+actually invoking SUSHI to compile `.fsh` (needs filesystem access the `Pack`
+interface doesn't carry yet), ValueSet-membership / binding-strength checks
+(needs terminology), cardinality-vs-base and FHIRPath-invariant checks (needs
+a snapshot or a FHIRPath engine).
+
+An error-severity finding from **any** pack fails the audit
+(`report.passed`), even if the hygiene score alone clears the threshold.
+
+#### FHIR: missing profile meta
+
+Add `meta.profile` with the canonical URL(s) this example conforms to.
+
+#### FHIR: unresolved canonical
+
+Create the missing profile/ValueSet/CodeSystem, or fix the typo in the
+canonical URL.
+
+#### FHIR: unpinned dependency
+
+Pin the dependency to an exact released version instead of `current`, a
+range, or a branch name.
+
+#### FHIR: invalid fhir version
+
+Declare a released FHIR version (e.g. `4.0.1`) or a recognised alias (`R4`,
+`R4B`, `R5`).
+
+#### FHIR: version mismatch
+
+Make the `ImplementationGuide` resource's `fhirVersion` match
+`sushi-config.yaml` — usually means rebuilding it with SUSHI.
+
+#### FHIR: slicing no discriminator
+
+Add `slicing.discriminator` (a type and path) to the sliced element, or
+remove the slicing if it isn't needed.
+
+#### FHIR: pii in example
+
+Use an obviously-fake identifier (a repeating or sequential digit pattern),
+or tag the resource `meta.tag =
+http://terminology.hl7.org/CodeSystem/v3-ActReason#HTEST`.
+
+#### FHIR: invalid json
+
+Fix the JSON syntax error, or run the file through SUSHI or a JSON linter.
+
+#### FHIR: fsh compile skipped
+
+Install SUSHI (`npm i -g fsh-sushi`) so `.fsh` files get compiled and
+checked. This is an informational finding, not a failure.
 
 ## Audit guidance
 

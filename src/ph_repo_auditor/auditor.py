@@ -16,7 +16,11 @@ def audit_repository(
     policy = policy or AuditPolicy()
     registry = registry or PackRegistry()
     repo = RepoView(files, policy.ignore_paths)
-    active = registry.select(repo, packs)
+    active = tuple(
+        pack
+        for pack in registry.select(repo, packs)
+        if pack.id not in policy.disabled_packs
+    )
     active_ids = {pack.id for pack in active}
 
     # Hygiene stays the point-scored pack that drives `score`/`grade`/`passed`;

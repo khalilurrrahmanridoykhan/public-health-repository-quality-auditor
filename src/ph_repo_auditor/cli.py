@@ -8,26 +8,38 @@ from .auditor import audit_repository
 from .policy import parse_policy
 
 
-TEXT_FILE_NAMES = {
-    "readme.md",
-    "readme.rst",
-    "data_dictionary.md",
-    "data-dictionary.md",
-    "codebook.md",
-    ".ph-repo-auditor.yml",
-    ".ph-repo-auditor.yaml",
+# Suffixes whose content packs might actually need to read (README prose,
+# policy YAML, and now FHIR's sushi-config.yaml/*.fsh/conformance JSON).
+# Everything else is tracked by path only, which is all the hygiene checks need.
+TEXT_SUFFIXES = {".md", ".rst", ".txt", ".yml", ".yaml", ".json", ".fsh", ".cff"}
+MAX_TEXT_BYTES = 1_000_000  # skip content for anything unusually large
+EXCLUDED_DIR_NAMES = {
+    ".git",
+    ".venv",
+    "node_modules",
+    ".next",
+    ".open-next",
+    ".wrangler",
+    "dist",
+    "build",
+    "__pycache__",
+    ".pytest_cache",
 }
 
 
 def scan_directory(root: Path) -> dict[str, str | None]:
     files: dict[str, str | None] = {}
     for path in root.rglob("*"):
-        if not path.is_file() or ".git" in path.parts or ".venv" in path.parts:
+        if not path.is_file() or EXCLUDED_DIR_NAMES & set(path.parts):
             continue
         relative = path.relative_to(root).as_posix()
         content = None
-        if path.name.lower() in TEXT_FILE_NAMES:
-            content = path.read_text(encoding="utf-8", errors="replace")
+        if path.suffix.lower() in TEXT_SUFFIXES:
+            try:
+                if path.stat().st_size <= MAX_TEXT_BYTES:
+                    content = path.read_text(encoding="utf-8", errors="replace")
+            except OSError:
+                content = None
         files[relative] = content
     return files
 
