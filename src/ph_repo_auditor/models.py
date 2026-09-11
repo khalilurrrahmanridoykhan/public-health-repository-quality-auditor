@@ -1,5 +1,6 @@
 from dataclasses import dataclass, field
 
+from . import __version__
 
 CHECK_KEYS = (
     "readme",
@@ -205,7 +206,7 @@ class AuditReport:
                         "driver": {
                             "name": "ph-repo-auditor",
                             "informationUri": TOOL_URI,
-                            "version": "0.1.0",
+                            "version": __version__,
                             "rules": list(rules.values()),
                         }
                     },

@@ -6,12 +6,13 @@ import os
 
 from fastapi import FastAPI, Header, HTTPException, Request
 
+from . import __version__
 from .github import GitHubAppClient, GitHubAppConfig
 
 
 app = FastAPI(
     title="Public Health Repository Quality Auditor",
-    version="0.1.0",
+    version=__version__,
     docs_url="/docs",
 )
 
