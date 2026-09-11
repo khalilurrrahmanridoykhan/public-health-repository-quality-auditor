@@ -14,6 +14,10 @@ CHECK_KEYS = (
     "ethics",
 )
 
+TOOL_URI = "https://github.com/khalilurrrahmanridoykhan/public-health-repository-quality-auditor"
+
+_SARIF_LEVELS = {"error": "error", "warning": "warning", "info": "note"}
+
 
 @dataclass(frozen=True)
 class AuditPolicy:
@@ -41,6 +45,52 @@ class CheckResult:
     evidence: tuple[str, ...] = ()
 
 
+@dataclass(frozen=True)
+class Finding:
+    """A single, line-anchorable audit finding produced by a pack.
+
+    Unlike `CheckResult` (which is hygiene's point-scored pass/fail model),
+    a `Finding` is the general shape every pack (hygiene, and future FHIR /
+    DHIS2 / OpenMRS packs) emits, suitable for GitHub Check Run annotations
+    and SARIF output.
+    """
+
+    rule_id: str
+    pack: str
+    severity: str  # "error" | "warning" | "info"
+    category: str
+    title: str
+    message: str
+    fix: str = ""
+    file: str | None = None
+    line: int | None = None
+    docs_url: str = ""
+    evidence: tuple[str, ...] = ()
+
+    def to_dict(self) -> dict:
+        return {
+            "rule_id": self.rule_id,
+            "pack": self.pack,
+            "severity": self.severity,
+            "category": self.category,
+            "title": self.title,
+            "message": self.message,
+            "fix": self.fix,
+            "file": self.file,
+            "line": self.line,
+            "docs_url": self.docs_url,
+            "evidence": list(self.evidence),
+        }
+
+
+@dataclass(frozen=True)
+class PackScore:
+    pack: str
+    score: int
+    earned: int
+    possible: int
+
+
 @dataclass
 class AuditReport:
     repository: str
@@ -48,6 +98,8 @@ class AuditReport:
     minimum_score: int = 80
     missing_required_files: tuple[str, ...] = ()
     policy_warnings: tuple[str, ...] = ()
+    findings: tuple[Finding, ...] = ()
+    pack_scores: tuple[PackScore, ...] = ()
 
     @property
     def score(self) -> int:
@@ -94,6 +146,62 @@ class AuditReport:
                     "evidence": list(item.evidence),
                 }
                 for item in self.results
+            ],
+            "pack_scores": [
+                {
+                    "pack": item.pack,
+                    "score": item.score,
+                    "earned": item.earned,
+                    "possible": item.possible,
+                }
+                for item in self.pack_scores
+            ],
+            "findings": [item.to_dict() for item in self.findings],
+        }
+
+    def to_sarif(self) -> dict:
+        """A SARIF 2.1.0 log of this report's findings, for GitHub code scanning."""
+        rules: dict[str, dict] = {}
+        results = []
+        for finding in self.findings:
+            if finding.rule_id not in rules:
+                rules[finding.rule_id] = {
+                    "id": finding.rule_id,
+                    "name": finding.rule_id,
+                    "shortDescription": {"text": finding.title},
+                    "helpUri": finding.docs_url or TOOL_URI,
+                    "properties": {"category": finding.category, "pack": finding.pack},
+                }
+            result: dict = {
+                "ruleId": finding.rule_id,
+                "level": _SARIF_LEVELS.get(finding.severity, "warning"),
+                "message": {"text": finding.message},
+            }
+            if finding.file:
+                result["locations"] = [
+                    {
+                        "physicalLocation": {
+                            "artifactLocation": {"uri": finding.file},
+                            "region": {"startLine": finding.line or 1},
+                        }
+                    }
+                ]
+            results.append(result)
+        return {
+            "$schema": "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/main/Schemata/sarif-schema-2.1.0.json",
+            "version": "2.1.0",
+            "runs": [
+                {
+                    "tool": {
+                        "driver": {
+                            "name": "ph-repo-auditor",
+                            "informationUri": TOOL_URI,
+                            "version": "0.1.0",
+                            "rules": list(rules.values()),
+                        }
+                    },
+                    "results": results,
+                }
             ],
         }
 
