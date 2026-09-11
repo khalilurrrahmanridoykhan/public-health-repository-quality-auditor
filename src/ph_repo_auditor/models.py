@@ -23,6 +23,7 @@ _SARIF_LEVELS = {"error": "error", "warning": "warning", "info": "note"}
 class AuditPolicy:
     minimum_score: int = 80
     disabled_checks: tuple[str, ...] = ()
+    disabled_packs: tuple[str, ...] = ()
     required_files: tuple[str, ...] = ()
     ignore_paths: tuple[str, ...] = ()
     privacy_terms: tuple[str, ...] = (
@@ -120,11 +121,19 @@ class AuditReport:
         return "F"
 
     @property
+    def has_blocking_findings(self) -> bool:
+        """Whether any pack (not just hygiene) reported an error-severity
+        finding — a broken FHIR reference or a PII leak should fail the
+        Check Run even if the hygiene score alone is high."""
+        return any(finding.severity == "error" for finding in self.findings)
+
+    @property
     def passed(self) -> bool:
         return (
             self.score >= self.minimum_score
             and not self.missing_required_files
             and not self.policy_warnings
+            and not self.has_blocking_findings
         )
 
     def to_dict(self) -> dict:
@@ -205,6 +214,28 @@ class AuditReport:
             ],
         }
 
+    def _pack_findings_markdown(self) -> list[str]:
+        """A '### `<pack>` findings' section per non-hygiene pack that found
+        something. Hygiene's findings are already covered by the checks table
+        and recommendations above, so they're excluded here."""
+        icons = {"error": "🛑", "warning": "⚠️", "info": "ℹ️"}
+        by_pack: dict[str, list[Finding]] = {}
+        for finding in self.findings:
+            if finding.pack == "hygiene":
+                continue
+            by_pack.setdefault(finding.pack, []).append(finding)
+
+        lines: list[str] = []
+        for pack in sorted(by_pack):
+            lines.extend(["", f"### `{pack}` pack findings", ""])
+            for finding in by_pack[pack]:
+                location = f" (`{finding.file}`" + (
+                    f":{finding.line}" if finding.line else ""
+                ) + ")" if finding.file else ""
+                icon = icons.get(finding.severity, "⚠️")
+                lines.append(f"- {icon} **{finding.title}**{location}: {finding.message}")
+        return lines
+
     def to_markdown(self) -> str:
         rows = ["| Check | Result | Points |", "|---|---:|---:|"]
         for item in self.results:
@@ -219,6 +250,8 @@ class AuditReport:
         ]
         if not recommendations:
             recommendations = ["- All configured quality checks passed."]
+
+        pack_sections = self._pack_findings_markdown()
 
         return "\n".join(
             [
@@ -238,6 +271,7 @@ class AuditReport:
                 "### Recommended next steps",
                 "",
                 *recommendations,
+                *pack_sections,
                 *(
                     [
                         "",

@@ -5,6 +5,9 @@ from typing import Any
 import yaml
 
 from .models import AuditPolicy, CHECK_KEYS
+from .packs import DEFAULT_PACKS
+
+PACK_IDS = {pack.id for pack in DEFAULT_PACKS}
 
 
 def _clean_path(value: str) -> str:
@@ -58,6 +61,13 @@ def parse_policy(content: str | None) -> tuple[AuditPolicy, tuple[str, ...]]:
         else:
             warnings.append(f"Unknown disabled check: `{key}`.")
 
+    disabled_packs: list[str] = []
+    for key in _string_list(source, "disabled_packs", warnings):
+        if key in PACK_IDS:
+            disabled_packs.append(key)
+        else:
+            warnings.append(f"Unknown pack: `{key}`.")
+
     required_files = [
         _clean_path(path)
         for path in _string_list(source, "required_files", warnings)
@@ -74,6 +84,7 @@ def parse_policy(content: str | None) -> tuple[AuditPolicy, tuple[str, ...]]:
         AuditPolicy(
             minimum_score=minimum_score,
             disabled_checks=tuple(dict.fromkeys(disabled_checks)),
+            disabled_packs=tuple(dict.fromkeys(disabled_packs)),
             required_files=tuple(dict.fromkeys(required_files)),
             ignore_paths=tuple(dict.fromkeys(ignore_paths)),
             privacy_terms=(
