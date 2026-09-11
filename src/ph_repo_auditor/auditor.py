@@ -50,8 +50,10 @@ def audit_repository(
             continue
         findings.extend(pack.run(repo, policy))
 
+    # policy.required_files is already lower-cased by parse_policy(); repo.paths
+    # is real-case, so compare against the lower-cased view.
     missing_required_files = tuple(
-        path for path in policy.required_files if path not in repo.paths
+        path for path in policy.required_files if path not in repo.paths_lower
     )
     return AuditReport(
         repository=repository,
