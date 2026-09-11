@@ -18,8 +18,8 @@ def test_registry_defaults_to_every_detecting_pack():
 
 def test_registry_rejects_unknown_pack_id():
     repo = RepoView({})
-    with pytest.raises(ValueError, match="dhis2"):
-        PackRegistry().select(repo, ("dhis2",))
+    with pytest.raises(ValueError, match="openmrs"):
+        PackRegistry().select(repo, ("openmrs",))
 
 
 def test_registry_can_select_a_subset_of_packs():
@@ -53,7 +53,7 @@ def test_findings_mirror_failed_checks_and_carry_docs_urls():
 def test_findings_anchor_to_the_readme_when_present():
     report = audit_repository("owner/study", {"README.md": "", "LICENSE": None})
     readme_finding = next(f for f in report.findings if f.rule_id == "hygiene/readme")
-    assert readme_finding.file == "readme.md"
+    assert readme_finding.file == "README.md"
     assert readme_finding.line == 1
 
 
@@ -122,6 +122,26 @@ def test_repo_view_honours_ignore_paths():
     assert repo.paths == frozenset({"tests/test_real.py"})
 
 
+def test_repo_view_preserves_real_case_for_findable_paths():
+    # A Finding.file has to be a real path GitHub can resolve for an
+    # annotation/SARIF location — source code is case-sensitive by
+    # convention (src/App.tsx), unlike README/LICENSE.
+    repo = RepoView({"src/App.tsx": "export default App", "README.md": "hi"})
+    assert repo.paths == frozenset({"src/App.tsx", "README.md"})
+    assert repo.anchor() == "README.md"
+    assert repo.find({"app.tsx"}) == ("src/App.tsx",)
+    assert repo.get("README.md") == "hi"
+    assert repo.get("readme.md") == "hi"  # case-insensitive lookup
+
+
+def test_repo_view_ignore_paths_are_case_insensitive():
+    repo = RepoView(
+        {"Generated/output.json": None, "src/App.tsx": None},
+        ignore_paths=("generated",),
+    )
+    assert repo.paths == frozenset({"src/App.tsx"})
+
+
 def test_to_sarif_has_one_rule_per_rule_id_and_a_location_when_anchored():
     report = audit_repository("owner/study", {"README.md": "", "LICENSE": None})
     sarif = report.to_sarif()
@@ -134,7 +154,7 @@ def test_to_sarif_has_one_rule_per_rule_id_and_a_location_when_anchored():
     )
     assert readme_result["locations"][0]["physicalLocation"]["artifactLocation"][
         "uri"
-    ] == "readme.md"
+    ] == "README.md"
 
 
 def test_to_sarif_omits_locations_for_unanchored_findings():

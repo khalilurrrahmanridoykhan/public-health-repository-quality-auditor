@@ -9,9 +9,23 @@ from .policy import parse_policy
 
 
 # Suffixes whose content packs might actually need to read (README prose,
-# policy YAML, and now FHIR's sushi-config.yaml/*.fsh/conformance JSON).
+# policy YAML, FHIR's sushi-config.yaml/*.fsh/conformance JSON, and DHIS2's
+# d2.config.js/app source for the hardcoded-URL and raw-fetch checks).
 # Everything else is tracked by path only, which is all the hygiene checks need.
-TEXT_SUFFIXES = {".md", ".rst", ".txt", ".yml", ".yaml", ".json", ".fsh", ".cff"}
+TEXT_SUFFIXES = {
+    ".md",
+    ".rst",
+    ".txt",
+    ".yml",
+    ".yaml",
+    ".json",
+    ".fsh",
+    ".cff",
+    ".js",
+    ".jsx",
+    ".ts",
+    ".tsx",
+}
 MAX_TEXT_BYTES = 1_000_000  # skip content for anything unusually large
 EXCLUDED_DIR_NAMES = {
     ".git",

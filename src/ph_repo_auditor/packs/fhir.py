@@ -81,16 +81,18 @@ _DESCENDING_DIGITS = "9876543210" * 3
 
 
 def _filenames(repo: RepoView) -> dict[str, str]:
-    return {path.rsplit("/", 1)[-1]: path for path in repo.paths}
+    """Lower-cased basename -> real-case path, for case-insensitive marker
+    lookups (`StructureDefinition-Foo.json` is SUSHI's actual convention)."""
+    return {path.rsplit("/", 1)[-1].lower(): path for path in repo.paths}
 
 
 def _is_fhir_relevant_json(path: str) -> bool:
-    name = path.rsplit("/", 1)[-1]
-    if not name.lower().endswith(".json"):
+    name = path.rsplit("/", 1)[-1].lower()
+    if not name.endswith(".json"):
         return False
     if CONFORMANCE_FILENAME_RE.match(name):
         return True
-    segments = path.split("/")[:-1]
+    segments = path.lower().split("/")[:-1]
     return any(segment in FHIR_RELEVANT_DIR_SEGMENTS for segment in segments)
 
 
@@ -166,7 +168,7 @@ class FhirPack:
             (
                 path
                 for path in repo.paths
-                if path.rsplit("/", 1)[-1] in FSH_CONFIG_NAMES
+                if path.rsplit("/", 1)[-1].lower() in FSH_CONFIG_NAMES
             ),
             None,
         )
