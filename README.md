@@ -54,9 +54,10 @@ ph-repo-audit /path/to/research-repository --pack hygiene           # repeatable
 
 Checks are grouped into **packs**. Each repository is audited by whichever
 packs detect themselves on it — `hygiene` (the 10 checks above) always
-applies, and `fhir` (see below) activates on FHIR Implementation Guide /
-package repositories. More platform packs (DHIS2, OpenMRS, ...) are planned.
-Every pack emits `Finding`s (severity, category, file, line, rule ID, fix,
+applies, `fhir` activates on FHIR Implementation Guide / package
+repositories, and `dhis2` activates on DHIS2 App Platform apps and metadata
+export bundles (see below for both). More platform packs (OpenMRS, ...) are
+planned. Every pack emits `Finding`s (severity, category, file, line, rule ID, fix,
 docs link) in addition to `hygiene`'s point-scored `CheckResult`s, so output
 is available as Markdown, JSON, and [SARIF 2.1.0](https://sarifweb.azurewebsites.net/)
 for GitHub code scanning.
@@ -147,8 +148,9 @@ privacy_terms:
 - `disabled_checks` accepts `readme`, `license`, `citation`, `dependencies`,
   `reproduction`, `tests`, `data_dictionary`, `provenance`, `privacy`, and
   `ethics`.
-- `disabled_packs` accepts `hygiene` and `fhir` — turns an entire pack off
-  regardless of whether it would otherwise detect itself on the repository.
+- `disabled_packs` accepts `hygiene`, `fhir`, and `dhis2` — turns an entire
+  pack off regardless of whether it would otherwise detect itself on the
+  repository.
 - `required_files` contains exact repository-relative paths.
 - `ignore_paths` contains repository-relative path prefixes.
 - `privacy_terms` adds repository-specific phrases that satisfy the privacy
@@ -232,6 +234,70 @@ Fix the JSON syntax error, or run the file through SUSHI or a JSON linter.
 
 Install SUSHI (`npm i -g fsh-sushi`) so `.fsh` files get compiled and
 checked. This is an informational finding, not a failure.
+
+## DHIS2 pack
+
+Detected automatically when the repository has `d2.config.js`/`.json`, a
+`package.json` depending on any `@dhis2/*` package, or a JSON file with a
+DHIS2-distinctive metadata collection key (`organisationUnits`,
+`categoryCombos`, `programRules`, `sqlViews`, ...). Source-level checks are
+regex heuristics over JS/TS/JSX/TSX text — deliberately conservative (a
+literal quoted string, not an arbitrary JS parse) to keep false positives
+low.
+
+| Rule | Severity | What it catches |
+| :--- | :--- | :--- |
+| `dhis2/invalid-d2-config` | error | `d2.config` has no recognised `type` (`app`, `widget`, `app+widget`) or no `entryPoints`. |
+| `dhis2/hardcoded-instance-url` | warning | A literal `play.dhis2.org`/`*.dhis2.org`/`*.dhis2.com` URL in source instead of the app-runtime config or a Route. |
+| `dhis2/raw-fetch-to-api` | warning | `fetch(`/`axios.*(` called with a literal `/api/...` string instead of `useDataQuery`/`useDataMutation`. |
+| `dhis2/metadata-duplicate-uid` | error | The same `id` defined more than once in a metadata export. |
+| `dhis2/metadata-dangling-ref` | error | A reference field (`categoryCombo`, `dataElement`, `program`, ...) points at an id missing from the bundle's own matching collection — only checked when that collection is actually present, so an intentionally-partial export isn't flagged. |
+| `dhis2/sqlview-mutating-statement` | error | A SQL View's `sqlQuery` contains `INSERT`/`UPDATE`/`DELETE`/`DROP`/`ALTER`/`TRUNCATE`/`CREATE`/`GRANT`/`REVOKE` instead of a read-only `SELECT`. |
+| `dhis2/program-rule-undefined-var` | warning | A program rule condition/action references `#{variable}` not in `programRuleVariables`, or `V{builtin}` that isn't a documented DHIS2 built-in variable. |
+
+**Dropped after testing against 4 real DHIS2 App Platform apps:**
+`no-app-runtime-provider` (from the original design) would have flagged
+every one of them — `@dhis2/cli-app-scripts` wraps the app in a `<Provider>`
+at build time, so modern App Platform apps never author their own.
+
+**Deferred to a later pass:** `missing-translations` (no reliable way to
+know which locales an app must support), `version-compat` (would need a
+maintained API-parameter → minimum-DHIS2-version table), `no-i18n-extraction`
+(a naive regex over JSX text is too noisy without a real JSX parser).
+
+#### DHIS2: invalid d2 config
+
+Set `type` to one of the App Platform's supported types and add an
+`entryPoints` object, e.g. `{ app: './src/App.js' }`.
+
+#### DHIS2: hardcoded instance url
+
+Read the instance base URL from `useConfig()`/`useDataEngine()`, or define a
+Route instead of a literal URL.
+
+#### DHIS2: raw fetch to api
+
+Use `useDataQuery`/`useDataMutation` (or `useDataEngine`) so auth, the
+instance base URL, and error handling are handled for you.
+
+#### DHIS2: metadata duplicate uid
+
+DHIS2 UIDs must be globally unique; regenerate one of the duplicates.
+
+#### DHIS2: metadata dangling ref
+
+Include the referenced object in the export, or confirm it already exists
+on the target instance before importing.
+
+#### DHIS2: sqlview mutating statement
+
+SQL Views must be read-only `SELECT` queries; DHIS2 will reject or refuse to
+run one that mutates data.
+
+#### DHIS2: program rule undefined var
+
+Add a matching `programRuleVariable`, or check for a typo against DHIS2's
+documented `V{...}` built-in variables.
 
 ## Audit guidance
 
