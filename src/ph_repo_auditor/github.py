@@ -9,6 +9,11 @@ import jwt
 
 from .auditor import audit_repository
 from .models import AuditReport
+from .packs.dhis2 import (
+    D2_CONFIG_NAMES,
+    _is_dhis2_relevant_source,
+    _is_likely_dhis2_metadata_path,
+)
 from .packs.fhir import FSH_CONFIG_NAMES, _is_fhir_relevant_json
 from .policy import parse_policy
 
@@ -86,14 +91,18 @@ class GitHubAppClient:
                 ("data_dictionary.md", "data-dictionary.md", "codebook.md")
             )
         }
-        fhir_relevant = sorted(
+        pack_relevant = sorted(
             path
             for path in file_paths
             if path.rsplit("/", 1)[-1] in FSH_CONFIG_NAMES
             or path.endswith(".fsh")
             or _is_fhir_relevant_json(path)
+            or path.rsplit("/", 1)[-1] in D2_CONFIG_NAMES
+            or path.rsplit("/", 1)[-1] == "package.json"
+            or _is_dhis2_relevant_source(path)
+            or _is_likely_dhis2_metadata_path(path)
         )
-        selected = core_selected | set(fhir_relevant[:MAX_PACK_FILES])
+        selected = core_selected | set(pack_relevant[:MAX_PACK_FILES])
         files: dict[str, str | None] = {path: None for path in file_paths}
         for path in selected:
             response = self._client.get(
