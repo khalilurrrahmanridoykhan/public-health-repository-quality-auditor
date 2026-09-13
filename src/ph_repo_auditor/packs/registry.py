@@ -4,16 +4,17 @@ from .base import Pack, RepoView
 from .dhis2 import Dhis2Pack
 from .fhir import FhirPack
 from .hygiene import HygienePack
+from .openmrs import OpenmrsPack
 
-DEFAULT_PACKS: tuple[Pack, ...] = (HygienePack(), FhirPack(), Dhis2Pack())
+DEFAULT_PACKS: tuple[Pack, ...] = (HygienePack(), FhirPack(), Dhis2Pack(), OpenmrsPack())
 
 
 class PackRegistry:
     """Selects which registered packs apply to a given repository.
 
-    Phase 1 shipped `hygiene`; Phase 2 added `fhir`; Phase 3 added `dhis2`.
-    Later phases register more (`openmrs`, ...) here without touching
-    callers.
+    Phase 1 shipped `hygiene`; Phase 2 added `fhir`; Phase 3 added `dhis2`;
+    Phase 4 added `openmrs`. Later phases register more here without
+    touching callers.
     """
 
     def __init__(self, packs: tuple[Pack, ...] = DEFAULT_PACKS):
