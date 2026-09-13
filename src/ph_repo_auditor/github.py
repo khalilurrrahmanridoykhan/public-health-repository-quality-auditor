@@ -15,6 +15,7 @@ from .packs.dhis2 import (
     _is_likely_dhis2_metadata_path,
 )
 from .packs.fhir import FSH_CONFIG_NAMES, _is_fhir_relevant_json
+from .packs.openmrs import _is_openmrs_relevant_path
 from .policy import parse_policy
 
 
@@ -101,6 +102,7 @@ class GitHubAppClient:
             or path.rsplit("/", 1)[-1] == "package.json"
             or _is_dhis2_relevant_source(path)
             or _is_likely_dhis2_metadata_path(path)
+            or _is_openmrs_relevant_path(path)
         )
         selected = core_selected | set(pack_relevant[:MAX_PACK_FILES])
         files: dict[str, str | None] = {path: None for path in file_paths}

@@ -55,9 +55,10 @@ ph-repo-audit /path/to/research-repository --pack hygiene           # repeatable
 Checks are grouped into **packs**. Each repository is audited by whichever
 packs detect themselves on it — `hygiene` (the 10 checks above) always
 applies, `fhir` activates on FHIR Implementation Guide / package
-repositories, and `dhis2` activates on DHIS2 App Platform apps and metadata
-export bundles (see below for both). More platform packs (OpenMRS, ...) are
-planned. Every pack emits `Finding`s (severity, category, file, line, rule ID, fix,
+repositories, `dhis2` activates on DHIS2 App Platform apps and metadata
+export bundles, and `openmrs` activates on OpenMRS Java modules and O3
+microfrontends (see below for all three). More platform packs are planned.
+Every pack emits `Finding`s (severity, category, file, line, rule ID, fix,
 docs link) in addition to `hygiene`'s point-scored `CheckResult`s, so output
 is available as Markdown, JSON, and [SARIF 2.1.0](https://sarifweb.azurewebsites.net/)
 for GitHub code scanning.
@@ -148,8 +149,8 @@ privacy_terms:
 - `disabled_checks` accepts `readme`, `license`, `citation`, `dependencies`,
   `reproduction`, `tests`, `data_dictionary`, `provenance`, `privacy`, and
   `ethics`.
-- `disabled_packs` accepts `hygiene`, `fhir`, and `dhis2` — turns an entire
-  pack off regardless of whether it would otherwise detect itself on the
+- `disabled_packs` accepts `hygiene`, `fhir`, `dhis2`, and `openmrs` — turns
+  an entire pack off regardless of whether it would otherwise detect itself on the
   repository.
 - `required_files` contains exact repository-relative paths.
 - `ignore_paths` contains repository-relative path prefixes.
@@ -298,6 +299,86 @@ run one that mutates data.
 
 Add a matching `programRuleVariable`, or check for a typo against DHIS2's
 documented `V{...}` built-in variables.
+
+## OpenMRS pack
+
+Detected automatically when the repository has an OpenMRS module descriptor
+(`config.xml` with a `<module>` root and a `<package>` child — plain
+`config.xml` is too generic a filename to trust on its own), a `pom.xml`
+declaring `<packaging>omod</packaging>`, an O3 `routes.json`
+(`$schema: https://json.openmrs.org/routes.schema.json`), or a `package.json`
+depending on `@openmrs/esm-framework` in any of `dependencies`,
+`devDependencies`, or `peerDependencies`. Liquibase checks parse XML by root
+tag and local element name (namespace-tolerant), not by filename, so any
+`.xml` file with a `<databaseChangeLog>` root gets checked.
+
+| Rule | Severity | What it catches |
+| :--- | :--- | :--- |
+| `openmrs/liquibase-missing-id` | error | A `<changeSet>` with no `id` and/or `author` attribute. |
+| `openmrs/liquibase-duplicate-id` | error | The same `(id, author)` pair used on more than one changeSet in a changelog. |
+| `openmrs/liquibase-sql-no-rollback` | warning | A changeSet running raw `<sql>`/`<sqlFile>`/a `<customChange>` (none of which Liquibase can auto-rollback) with no `<rollback>`. `<createTable>`/`<addColumn>` etc. don't need one — Liquibase generates their rollback automatically. |
+| `openmrs/liquibase-non-idempotent` | warning | `<createTable>`/`<addColumn>`/`<dropTable>`/`<dropColumn>` with no `<preConditions>` guard, so re-running the changelog on an already-migrated database fails instead of being skipped. |
+| `openmrs/liquibase-db-specific-sql` | warning | Backtick-quoted identifiers or `ENGINE=`/`AUTO_INCREMENT` inside a raw `<sql>` block. |
+| `openmrs/hardcoded-concept-uuid` | warning | `getConceptByUuid("<literal uuid>")` in Java — the UUID only means the same thing on dictionaries that happen to share it. |
+| `openmrs/o3-missing-framework-peer` | error | `@openmrs/esm-framework` listed under `dependencies` instead of `peerDependencies` — bundling your own copy can load two incompatible copies of the framework side by side. |
+| `openmrs/o3-route-missing-export` | error | A `routes.json` page/extension/modal's `component` has no matching `export const` in the sibling `index.ts`/`index.tsx`/`index.js`. |
+| `openmrs/o3-invalid-routes-json` | error | `routes.json` doesn't parse as JSON. |
+
+**Dropped or refined after testing against 6 real OpenMRS repositories**
+(4 Java modules, 2 O3 microfrontends, including `openmrs/openmrs-module-idgen`
+and `openmrs/openmrs-esm-form-builder`): the original plan's
+`undeclared-privilege` and `undeclared-global-property` were dropped —
+real `@Authorized(...)`/`getGlobalProperty(...)` calls almost always pass a
+Java **constant** (a module's own constants class, or OpenMRS core's
+`PrivilegeConstants`), not a string literal, so a literal-only regex match
+would essentially never fire on real, idiomatic code. `requiremodules-unresolvable`
+was dropped — resolving a module dependency graph needs the OpenMRS module
+registry, not just one repo's `config.xml`. `o3-config-schema` was dropped —
+telling a genuine missing config key apart from a `useConfig()` destructure or
+a nested path reliably needs a real TypeScript parse, not regex. `o3-routes-registry`
+(the original name) was renamed to `o3-route-missing-export` once real O3
+modules turned out to use `routes.json`, not `routes.registry.json`, and to
+register components by name against the entry file's exports.
+
+#### OpenMRS: liquibase missing id
+
+Give every changeSet a unique `id` and an `author`.
+
+#### OpenMRS: liquibase duplicate id
+
+Give each changeSet a unique id — a UUID is the OpenMRS convention.
+
+#### OpenMRS: liquibase sql no rollback
+
+Add a `<rollback>` element describing how to undo the change.
+
+#### OpenMRS: liquibase non idempotent
+
+Add `<preConditions onFail="MARK_RAN">` checking the table/column doesn't
+already exist.
+
+#### OpenMRS: liquibase db specific sql
+
+Use Liquibase's structured change types (`createTable`, `addColumn`, ...)
+instead of raw MySQL SQL where possible.
+
+#### OpenMRS: hardcoded concept uuid
+
+Use `getConceptByMapping(code, source)` against a concept mapping (CIEL,
+SNOMED CT, ...) instead, or read the UUID from a configurable global property.
+
+#### OpenMRS: o3 missing framework peer
+
+Move `@openmrs/esm-framework` to `peerDependencies` (and keep it in
+`devDependencies` for local builds/tests).
+
+#### OpenMRS: o3 route missing export
+
+Add the export, or fix the component name in `routes.json`.
+
+#### OpenMRS: o3 invalid routes json
+
+Fix the JSON syntax error.
 
 ## Audit guidance
 
