@@ -9,8 +9,9 @@ from .policy import parse_policy
 
 
 # Suffixes whose content packs might actually need to read (README prose,
-# policy YAML, FHIR's sushi-config.yaml/*.fsh/conformance JSON, and DHIS2's
-# d2.config.js/app source for the hardcoded-URL and raw-fetch checks).
+# policy YAML, FHIR's sushi-config.yaml/*.fsh/conformance JSON, DHIS2's
+# d2.config.js/app source for the hardcoded-URL and raw-fetch checks, and
+# OpenMRS's config.xml/Liquibase changelogs/Java concept lookups).
 # Everything else is tracked by path only, which is all the hygiene checks need.
 TEXT_SUFFIXES = {
     ".md",
@@ -25,6 +26,8 @@ TEXT_SUFFIXES = {
     ".jsx",
     ".ts",
     ".tsx",
+    ".xml",
+    ".java",
 }
 MAX_TEXT_BYTES = 1_000_000  # skip content for anything unusually large
 EXCLUDED_DIR_NAMES = {
@@ -36,6 +39,7 @@ EXCLUDED_DIR_NAMES = {
     ".wrangler",
     "dist",
     "build",
+    "target",
     "__pycache__",
     ".pytest_cache",
 }
