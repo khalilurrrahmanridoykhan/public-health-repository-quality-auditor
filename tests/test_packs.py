@@ -11,9 +11,13 @@ def test_hygiene_pack_always_detects():
 
 
 def test_registry_defaults_to_every_detecting_pack():
+    # hygiene, pii, and portability are cross-cutting — they always detect.
+    # migration-safety is cross-cutting in spirit but still needs a
+    # migration-framework marker (same as the platform packs), which this
+    # bare-README repo lacks.
     repo = RepoView({"README.md": "hello"})
     active = PackRegistry().select(repo)
-    assert {pack.id for pack in active} == {"hygiene"}
+    assert {pack.id for pack in active} == {"hygiene", "pii", "portability"}
 
 
 def test_registry_rejects_unknown_pack_id():

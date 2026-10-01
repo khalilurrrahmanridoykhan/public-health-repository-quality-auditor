@@ -10,8 +10,10 @@ from .policy import parse_policy
 
 # Suffixes whose content packs might actually need to read (README prose,
 # policy YAML, FHIR's sushi-config.yaml/*.fsh/conformance JSON, DHIS2's
-# d2.config.js/app source for the hardcoded-URL and raw-fetch checks, and
-# OpenMRS's config.xml/Liquibase changelogs/Java concept lookups).
+# d2.config.js/app source for the hardcoded-URL and raw-fetch checks,
+# OpenMRS's config.xml/Liquibase changelogs/Java concept lookups, and the
+# Phase 5 cross-cutting packs' CSV headers/raw SQL/Django+Alembic Python/
+# Rails Ruby/portability-scanned source).
 # Everything else is tracked by path only, which is all the hygiene checks need.
 TEXT_SUFFIXES = {
     ".md",
@@ -28,6 +30,10 @@ TEXT_SUFFIXES = {
     ".tsx",
     ".xml",
     ".java",
+    ".py",
+    ".rb",
+    ".csv",
+    ".sql",
 }
 MAX_TEXT_BYTES = 1_000_000  # skip content for anything unusually large
 EXCLUDED_DIR_NAMES = {
@@ -45,6 +51,18 @@ EXCLUDED_DIR_NAMES = {
 }
 
 
+def _is_text_tracked(path: Path) -> bool:
+    """Whether `scan_directory` should read `path`'s content, not just track
+    its presence. `.env`/`.env.*` dotfiles have no `Path.suffix` pathlib can
+    see (the whole name is the "stem" for a leading-dot file), so the pii
+    pack's secrets check needs a name-based rule alongside the usual
+    suffix allowlist."""
+    if path.suffix.lower() in TEXT_SUFFIXES:
+        return True
+    name = path.name.lower()
+    return name == ".env" or name.startswith(".env.")
+
+
 def scan_directory(root: Path) -> dict[str, str | None]:
     files: dict[str, str | None] = {}
     for path in root.rglob("*"):
@@ -52,7 +70,7 @@ def scan_directory(root: Path) -> dict[str, str | None]:
             continue
         relative = path.relative_to(root).as_posix()
         content = None
-        if path.suffix.lower() in TEXT_SUFFIXES:
+        if _is_text_tracked(path):
             try:
                 if path.stat().st_size <= MAX_TEXT_BYTES:
                     content = path.read_text(encoding="utf-8", errors="replace")

@@ -53,15 +53,20 @@ ph-repo-audit /path/to/research-repository --pack hygiene           # repeatable
 ## Architecture: packs
 
 Checks are grouped into **packs**. Each repository is audited by whichever
-packs detect themselves on it — `hygiene` (the 10 checks above) always
-applies, `fhir` activates on FHIR Implementation Guide / package
-repositories, `dhis2` activates on DHIS2 App Platform apps and metadata
-export bundles, and `openmrs` activates on OpenMRS Java modules and O3
-microfrontends (see below for all three). More platform packs are planned.
-Every pack emits `Finding`s (severity, category, file, line, rule ID, fix,
-docs link) in addition to `hygiene`'s point-scored `CheckResult`s, so output
-is available as Markdown, JSON, and [SARIF 2.1.0](https://sarifweb.azurewebsites.net/)
-for GitHub code scanning.
+packs detect themselves on it. Three are platform packs, activating only on
+a matching marker file: `fhir` on FHIR Implementation Guide / package
+repositories, `dhis2` on DHIS2 App Platform apps and metadata export
+bundles, `openmrs` on OpenMRS Java modules and O3 microfrontends (see below
+for all three). Four are cross-cutting, applying to any repository: `hygiene`
+(the 10 checks above) and three multi-framework packs from Phase 5 — `pii`
+(patient data / secrets / DB dumps committed to source control),
+`migration-safety` (Flyway, Prisma, Django, Rails, and Alembic database
+migrations), and `portability` (hardcoded hostnames/paths, engine-locked
+SQL). More platform packs are planned. Every pack emits `Finding`s
+(severity, category, file, line, rule ID, fix, docs link) in addition to
+`hygiene`'s point-scored `CheckResult`s, so output is available as
+Markdown, JSON, and [SARIF 2.1.0](https://sarifweb.azurewebsites.net/) for
+GitHub code scanning.
 
 ## Run the webhook service
 
@@ -379,6 +384,138 @@ Add the export, or fix the component name in `routes.json`.
 #### OpenMRS: o3 invalid routes json
 
 Fix the JSON syntax error.
+
+## PII / secrets pack
+
+Cross-cutting — applies to every repository, not just ones matching a
+specific platform; the privacy mission this tool started with. CSV header
+detection fires only when **several** person-level-data column clusters
+(identity, date of birth, a health-specific field, a contact/ID field) show
+up together on the same file, so a single `name` column on an org-unit
+lookup table doesn't trip it — and a path containing `test`, `fixture`,
+`synthetic`, `sample`, `mock`, `demo`, or `example` is treated as
+deliberately synthetic and skipped.
+
+| Rule | Severity | What it catches |
+| :--- | :--- | :--- |
+| `pii/patient-data-in-repo` | error | A committed `.csv` whose header row clusters identity + DOB + health + contact/ID columns together — looks like real patient records, not aggregate or reference data. |
+| `secrets/committed-env-values` | error | A tracked `.env`/`.env.*` file (not `.env.example`/`.env.sample`/`.env.template`/`.env.dist`) with a non-empty, non-placeholder value. |
+| `pii/db-dump-committed` | warning | A committed `.dump`/`.bak` file, or a `.sql` file outside a migrations directory over ~20KB — shaped like a database export rather than a schema change. |
+
+#### PII: patient data in repo
+
+Remove the file from the repository and its history, or confirm it's
+synthetic and move it under a path (`fixtures/`, `test/`, ...) that marks it
+as such.
+
+#### Secrets: committed env values
+
+Remove the file from version control (add it to `.gitignore`), rotate any
+credential it contained, and commit an `.env.example` with empty/placeholder
+values instead.
+
+#### PII: db dump committed
+
+Confirm it isn't a real data export; if it is, remove it from the
+repository and its history — dumps belong outside version control.
+
+## Migration-safety pack
+
+Cross-cutting. Detects on `alembic.ini`, a Flyway-style versioned SQL
+migration (`V<n>__*.sql`) or a Prisma `migration.sql`, a Django migration
+(`class Migration(migrations.Migration)`), a Rails migration (`class ... <
+ActiveRecord::Migration`), or an Alembic revision script (`revision =`) —
+each matched by conventional directory **segment** (`migration`/
+`migrations`/`migrate`, or `versions` under `alembic/`), not a loose
+substring, so this won't mistake an unrelated file for a migration just
+because "migration" appears somewhere in its path. Regex heuristics over
+migration file text, same rigor tier as the DHIS2 pack's source scanning —
+not a real SQL/Python/Ruby parse. Liquibase (OpenMRS's migration tool) is
+covered by the `openmrs` pack instead, to avoid double-reporting.
+
+| Rule | Severity | What it catches |
+| :--- | :--- | :--- |
+| `migration/irreversible` | warning | A Django `RunPython` with no reverse function; a Rails migration using `drop_table`/`remove_column`/`change_column` inside `def change`, which Rails can't always auto-reverse; an Alembic revision with a non-trivial `upgrade()` and an empty `downgrade()`. **Django/Rails/Alembic only** — see below for why raw SQL (Flyway/Prisma) doesn't get an equivalent check. |
+| `migration/data-and-schema-mixed` | warning | A single migration that both alters schema and manipulates data (raw SQL DDL + DML outside any dollar-quoted function/trigger body, Django schema ops + `RunPython`/`RunSQL`, or Rails schema DSL + `update_all`/`find_each`/`execute`) — on a large health database this holds a schema lock for as long as the data operation takes. |
+
+**Two rules from the original plan were tried for raw SQL (Flyway/Prisma)
+and dropped after self-testing against a real 127-migration Flyway repo
+(Opetushallitus/kouta-backend)**: `irreversible` via a missing Flyway
+`U__*.sql` undo script fired on every destructive migration in that
+repo — Flyway's undo migrations are a Teams/Enterprise-only feature almost
+no Community-edition user can act on, so the "fix" was never actionable
+advice. `non-idempotent` via a missing `IF NOT EXISTS` guard fired on 37%
+of that repo's migrations — not an idiom Flyway or Prisma actually use;
+both tools track applied migrations in their own history table rather than
+relying on idempotent re-runs. `data-and-schema-mixed` was kept but fixed:
+its first pass also mistook a Postgres history-tracking trigger's own
+`insert into` (inside a dollar-quoted function body — compiled, not
+executed by the migration) for real data manipulation, inflating findings
+to 59/127 files; stripping dollar-quoted blocks before the DDL/DML scan
+brought that down to 8 real, inspected hits.
+
+**Knex is deferred**: its migrations are plain JS/TS functions
+(`exports.up = (knex) => ...`) with no textual convention as reliable as
+Flyway's `V__` naming or Django's `RunPython` — a regex-only pass
+would be guessing rather than checking. Needs real Knex repos to shape the
+rules against first, same reasoning as the DHIS2 pack's `no-i18n-extraction`
+deferral.
+
+#### Migration: irreversible
+
+Add an explicit reversal (a Django reverse function, a Rails `up`/`down`
+split, an Alembic `downgrade()`), or document why the migration is
+intentionally one-way.
+
+#### Migration: data and schema mixed
+
+Split the schema change and the data backfill into separate migrations.
+
+## Portability pack
+
+Cross-cutting. Scans `.py`/`.js`/`.jsx`/`.ts`/`.tsx`/`.java`/`.rb` source
+for environment-specific values that don't survive being deployed somewhere
+other than the author's own machine. The hostname check is deliberately
+narrow — it matches literal IP addresses and database/queue connection
+strings (`postgres://`, `mysql://`, `mongodb://`, `redis://`, `amqp(s)://`)
+with an embedded host, **not** any `https://` URL, because the latter flags
+every legitimate reference to a well-known public API (this project's own
+source references `api.github.com` and `github.com` throughout).
+
+**Refined twice more after testing against real repos** (discourse/discourse,
+saleor/saleor): a private/reserved/documentation-range IPv4 address (RFC
+1918/5737/6598 — the exact kind of address an SSRF-guard's own denylist is
+built from, as in Discourse's `lib/final_destination/ssrf_detector.rb`) no
+longer counts as a hardcoded hostname, since it's essentially never a
+specific real deployment host; a `Product/W.X.Y.Z` version string (a
+dotted-quad but not an IP, e.g. a pinned `Chrome/141.0.0.0` User-Agent) is
+excluded; and IP/connection-string matches are skipped in files under a
+test/spec/fixture path, where they're overwhelmingly test data (two of the
+original false positives were literal IPs inside Saleor's own test
+fixtures). The Windows-path check also gained a lookbehind excluding a
+drive letter preceded by a backslash, after a Ruby regex anchor
+(`/\A:\w+:\Z/` in Discourse's `lib/excerpt_parser.rb`) collided with it.
+
+| Rule | Severity | What it catches |
+| :--- | :--- | :--- |
+| `portability/hardcoded-hostname` | warning | A literal public (non-private/reserved/documentation-range) IPv4 address, or a DB/queue connection string with a literal (non-`localhost`, non-reserved) host, in non-test source. |
+| `portability/absolute-path` | warning | `/home/<user>/...`, `/Users/<user>/...`, or a `C:\...` Windows path in source. |
+| `portability/db-specific-sql` | warning | MySQL-only syntax (backtick quoting, `ENGINE=`, `AUTO_INCREMENT`) in a `.sql` file outside a migrations directory. |
+
+#### Portability: hardcoded hostname
+
+Read the host from an environment variable or config file instead of
+hardcoding it.
+
+#### Portability: absolute path
+
+Build the path from a config value, environment variable, or a path
+relative to the project root.
+
+#### Portability: db specific sql
+
+Use ANSI-standard SQL, or move engine-specific DDL into a proper migration
+where it's at least isolated and reviewable as such.
 
 ## Audit guidance
 
