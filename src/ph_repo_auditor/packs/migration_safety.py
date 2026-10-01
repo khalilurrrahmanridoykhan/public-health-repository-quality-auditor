@@ -5,22 +5,21 @@ import re
 from ..models import TOOL_URI, AuditPolicy, Finding
 from .base import RepoView
 
-_DESTRUCTIVE_SQL_RE = re.compile(
-    r"\b(DROP\s+TABLE|DROP\s+COLUMN|TRUNCATE)\b", re.IGNORECASE
-)
-_CREATE_OR_ADD_SQL_RE = re.compile(
-    r"\b(CREATE\s+TABLE|ADD\s+COLUMN)\b(?!\s+IF\s+NOT\s+EXISTS)", re.IGNORECASE
-)
 _DML_SQL_RE = re.compile(
     r"\b(INSERT\s+INTO|UPDATE\s+\w+\s+SET|DELETE\s+FROM)\b", re.IGNORECASE
 )
 _DDL_SQL_RE = re.compile(
     r"\b(CREATE\s+TABLE|ALTER\s+TABLE|DROP\s+TABLE)\b", re.IGNORECASE
 )
+# Postgres dollar-quoted string bodies (`$$ ... $$` / `$tag$ ... $tag$`) —
+# almost always a function/trigger definition. Stripped out before the DDL/
+# DML scan below: a plpgsql history-tracking trigger routinely contains its
+# own `insert into` inside the function body, which isn't data manipulation
+# the migration *executes* — it's the DDL that defines the trigger.
+_DOLLAR_QUOTED_RE = re.compile(r"\$([A-Za-z_]*)\$.*?\$\1\$", re.DOTALL)
 
-# Flyway's own versioned/undo naming convention: V1__thing.sql / U1__thing.sql.
+# Flyway's own versioned-migration naming convention: V1__thing.sql.
 _FLYWAY_VERSIONED_RE = re.compile(r"^V([0-9][0-9.]*)__.+\.sql$", re.IGNORECASE)
-_FLYWAY_UNDO_RE = re.compile(r"^U([0-9][0-9.]*)__.+\.sql$", re.IGNORECASE)
 
 _DJANGO_MIGRATION_RE = re.compile(r"class\s+Migration\s*\(\s*migrations\.Migration\s*\)")
 _DJANGO_RUNPYTHON_SINGLE_ARG_RE = re.compile(
@@ -37,7 +36,12 @@ _RAILS_SCHEMA_DSL_RE = re.compile(
 )
 _RAILS_DATA_RE = re.compile(r"\.(update_all|find_each|delete_all)\b|\bexecute\s*\(")
 
-_ALEMBIC_REVISION_RE = re.compile(r"^\s*revision(?::\s*\w+)?\s*=")
+# re.MULTILINE so `^` anchors each line, not just the start of the whole
+# file — a real Alembic script almost always has a license header or
+# module docstring before `revision = "..."`, which `^` without MULTILINE
+# would never see past (confirmed live: this silently no-op'd this pack's
+# entire Alembic branch against a real 399-file repo, apache/superset).
+_ALEMBIC_REVISION_RE = re.compile(r"^\s*revision(?::\s*\w+)?\s*=", re.MULTILINE)
 _ALEMBIC_DOWNGRADE_RE = re.compile(
     r"def\s+downgrade\s*\([^)]*\)\s*(?:->[^:]+)?:\s*\n((?:[ \t]+.*\n?)*)"
 )
@@ -82,10 +86,44 @@ class MigrationSafetyPack:
     `OpenmrsPack`; this pack intentionally doesn't duplicate it. Knex (the
     plan's sixth framework) is deferred: its migrations are plain JS/TS
     functions (`exports.up = (knex) => ...`) with no textual convention as
-    reliable as Flyway's `V__`/`U__` naming or Django's `RunPython`, so a
+    reliable as Flyway's `V__` naming or Django's `RunPython`, so a
     regex-only pass would be guessing rather than checking — needs real
     Knex repos to shape the rules against first, same reasoning as the
     DHIS2 pack's `no-i18n-extraction` deferral.
+
+    `migration/irreversible` and `migration/non-idempotent` only apply to
+    Django, Rails, and Alembic, **not** raw SQL (Flyway/Prisma) — both were
+    tried there first and dropped after self-testing against a real
+    127-migration Flyway repo (Opetushallitus/kouta-backend). Flyway's
+    "undo" migration (`U__*.sql`) is a Teams/Enterprise-only feature almost
+    no Community-edition user can act on, so flagging every `DROP`/
+    `TRUNCATE` for lacking one was unactionable advice, not a real finding;
+    `CREATE TABLE`/`ADD COLUMN` without `IF NOT EXISTS` isn't an idiom
+    Flyway (or Prisma) actually uses — Flyway's own model is versioned,
+    forward-only migrations tracked in its own history table, not
+    idempotent re-runs — and the check fired on 37% of that real repo's
+    migrations with no genuine issue behind it. `data-and-schema-mixed`
+    was kept but fixed: its first pass also fired on nearly half of
+    kouta-backend's migrations because Postgres history-tracking triggers
+    (`create function ... as $$ ... insert into ... $$`) textually contain
+    `insert into` inside their dollar-quoted body — compiled, not executed
+    by the migration. Stripping dollar-quoted blocks before the DDL/DML
+    scan took that down to 8 real hits (verified by inspection — each one
+    a genuine top-level `UPDATE`/`DELETE` alongside a schema change,
+    outside any function body).
+
+    The Alembic branch had its own real bug, also only found by testing
+    against a real repo: `_ALEMBIC_REVISION_RE`'s `^` anchor was compiled
+    without `re.MULTILINE`, so it only ever matched `revision = ` at the
+    very start of the file — never true in practice, since a real Alembic
+    script almost always opens with a license header or module docstring.
+    This made detect() and both Alembic checks a silent no-op on every
+    real file tested (confirmed: 0 findings against a 399-file real repo,
+    apache/superset, before the fix; 48 genuine findings — real
+    `upgrade()` logic paired with an empty `downgrade(): pass`, several
+    with their own "can't be downgraded" comments — after it). Hand-written
+    unit tests never caught this because they put `revision = ` on the
+    first line of the fixture with no header before it.
     """
 
     id = "migration-safety"
@@ -115,19 +153,6 @@ class MigrationSafetyPack:
 
     def run(self, repo: RepoView, policy: AuditPolicy) -> list[Finding]:
         findings: list[Finding] = []
-        flyway_versions = {
-            _FLYWAY_VERSIONED_RE.match(path.rsplit("/", 1)[-1]).group(1)
-            for path in repo.paths
-            if _is_migrations_path(path)
-            and _FLYWAY_VERSIONED_RE.match(path.rsplit("/", 1)[-1])
-        }
-        flyway_undo_versions = {
-            _FLYWAY_UNDO_RE.match(path.rsplit("/", 1)[-1]).group(1)
-            for path in repo.paths
-            if _is_migrations_path(path)
-            and _FLYWAY_UNDO_RE.match(path.rsplit("/", 1)[-1])
-        }
-
         for path in repo.paths:
             if not _is_migrations_path(path):
                 continue
@@ -138,9 +163,7 @@ class MigrationSafetyPack:
             lowered = name.lower()
 
             if lowered.endswith(".sql"):
-                findings.extend(
-                    self._raw_sql_checks(path, name, content, flyway_versions, flyway_undo_versions)
-                )
+                findings.extend(self._raw_sql_checks(path, content))
             elif lowered.endswith(".py"):
                 if _DJANGO_MIGRATION_RE.search(content):
                     findings.extend(self._django_checks(path, content))
@@ -153,51 +176,15 @@ class MigrationSafetyPack:
 
     # -- raw SQL (Flyway / Prisma / generic) -------------------------------
 
-    def _raw_sql_checks(
-        self,
-        path: str,
-        name: str,
-        content: str,
-        flyway_versions: set[str],
-        flyway_undo_versions: set[str],
-    ) -> list[Finding]:
+    def _raw_sql_checks(self, path: str, content: str) -> list[Finding]:
         findings = []
-        flyway_match = _FLYWAY_VERSIONED_RE.match(name)
-        if flyway_match and _DESTRUCTIVE_SQL_RE.search(content):
-            version = flyway_match.group(1)
-            if version not in flyway_undo_versions:
-                findings.append(
-                    self._finding(
-                        "irreversible",
-                        "warning",
-                        "migration-safety",
-                        "Destructive migration has no undo script",
-                        f"`{path}` drops or truncates something but there's no "
-                        f"matching Flyway undo script (`U{version}__*.sql`).",
-                        fix=f"Add `U{version}__*.sql` describing how to reverse "
-                        "this migration, or document why it's intentionally "
-                        "one-way.",
-                        file=path,
-                    )
-                )
-
-        if _CREATE_OR_ADD_SQL_RE.search(content):
-            findings.append(
-                self._finding(
-                    "non-idempotent",
-                    "info",
-                    "migration-safety",
-                    "Schema change has no existence guard",
-                    f"`{path}` creates a table or adds a column without an "
-                    "`IF NOT EXISTS` guard, so re-running it by hand after a "
-                    "partial failure will error instead of being a no-op.",
-                    fix="Add `IF NOT EXISTS` to the CREATE TABLE / ADD COLUMN "
-                    "statement.",
-                    file=path,
-                )
-            )
-
-        if _DDL_SQL_RE.search(content) and _DML_SQL_RE.search(content):
+        # Ignore dollar-quoted bodies (Postgres function/trigger definitions,
+        # e.g. `create function ... as $$ ... $$`) when looking for DML:
+        # statements inside one are compiled, not executed by the migration
+        # itself, so an INSERT inside a history-tracking trigger function
+        # isn't "data manipulation in this migration."
+        ddl_only = _DOLLAR_QUOTED_RE.sub("", content)
+        if _DDL_SQL_RE.search(ddl_only) and _DML_SQL_RE.search(ddl_only):
             findings.append(
                 self._finding(
                     "data-and-schema-mixed",

@@ -45,32 +45,43 @@ def test_detect_recognises_rails_migration():
     assert MigrationSafetyPack().detect(RepoView(files)) == 1.0
 
 
+def test_detect_recognises_alembic_revision_behind_a_license_header():
+    # Regression: a real Alembic script almost always has a license header
+    # or docstring before `revision = `, not on line 1 — the ^ anchor in
+    # _ALEMBIC_REVISION_RE must be MULTILINE or it silently never matches
+    # (found live against apache/superset's real migrations).
+    content = (
+        "# Licensed under the Apache License, Version 2.0\n"
+        '"""Init\n\nRevision ID: abc123\nRevises: None\n"""\n'
+        "revision = 'abc123'\n"
+        "down_revision = None\n\n"
+        "def upgrade():\n    pass\n\n"
+        "def downgrade():\n    pass\n"
+    )
+    files = {"alembic/versions/abc123_init.py": content}
+    assert MigrationSafetyPack().detect(RepoView(files)) == 1.0
+
+
 # -- raw SQL (Flyway / Prisma) ------------------------------------------
+#
+# migration/irreversible and migration/non-idempotent were tried for raw
+# SQL too, then dropped after self-testing against a real 127-migration
+# Flyway repo (Opetushallitus/kouta-backend) showed neither matches real
+# practice there — see MigrationSafetyPack's docstring.
 
 
-def test_flyway_destructive_migration_with_no_undo_is_flagged():
+def test_flyway_destructive_migration_is_not_flagged_irreversible():
+    # Flyway's undo migrations are a Teams/Enterprise-only feature; most
+    # Community users have no way to act on "add a U__ script."
     files = {"db/migration/V2__drop_old.sql": "DROP TABLE legacy_patients;\n"}
-    findings = _run(files)
-    assert any(f.rule_id == "migration/irreversible" for f in findings)
-
-
-def test_flyway_destructive_migration_with_a_matching_undo_is_not_flagged():
-    files = {
-        "db/migration/V2__drop_old.sql": "DROP TABLE legacy_patients;\n",
-        "db/migration/U2__drop_old.sql": "CREATE TABLE legacy_patients (id int);\n",
-    }
     findings = _run(files)
     assert not any(f.rule_id == "migration/irreversible" for f in findings)
 
 
-def test_create_table_without_if_not_exists_is_flagged_non_idempotent():
+def test_create_table_without_if_not_exists_is_not_flagged_non_idempotent():
+    # IF NOT EXISTS guards aren't a Flyway/Prisma idiom — Flyway's own
+    # model is versioned, forward-only migrations, not idempotent re-runs.
     files = {"db/migration/V1__init.sql": "CREATE TABLE t (id int);\n"}
-    findings = _run(files)
-    assert any(f.rule_id == "migration/non-idempotent" for f in findings)
-
-
-def test_create_table_with_if_not_exists_is_not_flagged():
-    files = {"db/migration/V1__init.sql": "CREATE TABLE IF NOT EXISTS t (id int);\n"}
     findings = _run(files)
     assert not any(f.rule_id == "migration/non-idempotent" for f in findings)
 
@@ -89,6 +100,27 @@ def test_schema_and_data_mixed_in_raw_sql_is_flagged():
 def test_schema_only_raw_sql_is_not_flagged_as_mixed():
     files = {"db/migration/V1__init.sql": "CREATE TABLE IF NOT EXISTS t (id int);\n"}
     findings = _run(files)
+    assert not any(f.rule_id == "migration/data-and-schema-mixed" for f in findings)
+
+
+def test_dml_inside_a_trigger_function_body_is_not_flagged_as_mixed():
+    # A plpgsql history-tracking trigger's own `insert into` (inside a
+    # dollar-quoted function body) is DDL defining the trigger, not data
+    # manipulation the migration itself executes — the exact real-world
+    # pattern found in Opetushallitus/kouta-backend's history tables.
+    content = (
+        "alter table patients drop column if exists legacy_code;\n\n"
+        "create or replace function update_patients_history() returns trigger\n"
+        "    language plpgsql\n"
+        "as\n"
+        "$$\n"
+        "begin\n"
+        "insert into patients_history (id, name) values (old.id, old.name);\n"
+        "return old;\n"
+        "end;\n"
+        "$$;\n"
+    )
+    findings = _run({"db/migration/V9__drop_legacy_code.sql": content})
     assert not any(f.rule_id == "migration/data-and-schema-mixed" for f in findings)
 
 
@@ -170,6 +202,22 @@ def test_rails_schema_and_data_mixed_is_flagged():
 
 def test_alembic_empty_downgrade_is_flagged():
     content = (
+        "revision = 'abc123'\n"
+        "down_revision = None\n\n"
+        "def upgrade():\n    op.create_table('t')\n\n"
+        "def downgrade():\n    pass\n"
+    )
+    findings = _run({"alembic/versions/abc123_init.py": content})
+    assert any(f.rule_id == "migration/irreversible" for f in findings)
+
+
+def test_alembic_empty_downgrade_behind_a_license_header_is_flagged():
+    # Same regression as the detect() test above, but through run() —
+    # confirms _alembic_checks actually gets dispatched to on a realistic
+    # file, not just that detect() fires.
+    content = (
+        "# Licensed under the Apache License, Version 2.0\n"
+        '"""Init\n\nRevision ID: abc123\n"""\n'
         "revision = 'abc123'\n"
         "down_revision = None\n\n"
         "def upgrade():\n    op.create_table('t')\n\n"
