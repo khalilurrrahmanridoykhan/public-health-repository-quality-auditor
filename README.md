@@ -435,26 +435,37 @@ covered by the `openmrs` pack instead, to avoid double-reporting.
 
 | Rule | Severity | What it catches |
 | :--- | :--- | :--- |
-| `migration/irreversible` | warning | A Flyway migration that drops/truncates with no matching undo script; a Django `RunPython` with no reverse function; a Rails migration using `drop_table`/`remove_column`/`change_column` inside `def change`, which Rails can't always auto-reverse; an Alembic revision with a non-trivial `upgrade()` and an empty `downgrade()`. |
-| `migration/non-idempotent` | info | A raw-SQL (Flyway/Prisma) migration's `CREATE TABLE`/`ADD COLUMN` with no `IF NOT EXISTS` guard, so re-running it by hand after a partial failure errors instead of being a no-op. |
-| `migration/data-and-schema-mixed` | warning | A single migration that both alters schema and manipulates data (raw SQL DDL + DML, Django schema ops + `RunPython`/`RunSQL`, or Rails schema DSL + `update_all`/`find_each`/`execute`) — on a large health database this holds a schema lock for as long as the data operation takes. |
+| `migration/irreversible` | warning | A Django `RunPython` with no reverse function; a Rails migration using `drop_table`/`remove_column`/`change_column` inside `def change`, which Rails can't always auto-reverse; an Alembic revision with a non-trivial `upgrade()` and an empty `downgrade()`. **Django/Rails/Alembic only** — see below for why raw SQL (Flyway/Prisma) doesn't get an equivalent check. |
+| `migration/data-and-schema-mixed` | warning | A single migration that both alters schema and manipulates data (raw SQL DDL + DML outside any dollar-quoted function/trigger body, Django schema ops + `RunPython`/`RunSQL`, or Rails schema DSL + `update_all`/`find_each`/`execute`) — on a large health database this holds a schema lock for as long as the data operation takes. |
+
+**Two rules from the original plan were tried for raw SQL (Flyway/Prisma)
+and dropped after self-testing against a real 127-migration Flyway repo
+(Opetushallitus/kouta-backend)**: `irreversible` via a missing Flyway
+`U__*.sql` undo script fired on every destructive migration in that
+repo — Flyway's undo migrations are a Teams/Enterprise-only feature almost
+no Community-edition user can act on, so the "fix" was never actionable
+advice. `non-idempotent` via a missing `IF NOT EXISTS` guard fired on 37%
+of that repo's migrations — not an idiom Flyway or Prisma actually use;
+both tools track applied migrations in their own history table rather than
+relying on idempotent re-runs. `data-and-schema-mixed` was kept but fixed:
+its first pass also mistook a Postgres history-tracking trigger's own
+`insert into` (inside a dollar-quoted function body — compiled, not
+executed by the migration) for real data manipulation, inflating findings
+to 59/127 files; stripping dollar-quoted blocks before the DDL/DML scan
+brought that down to 8 real, inspected hits.
 
 **Knex is deferred**: its migrations are plain JS/TS functions
 (`exports.up = (knex) => ...`) with no textual convention as reliable as
-Flyway's `V__`/`U__` naming or Django's `RunPython` — a regex-only pass
+Flyway's `V__` naming or Django's `RunPython` — a regex-only pass
 would be guessing rather than checking. Needs real Knex repos to shape the
 rules against first, same reasoning as the DHIS2 pack's `no-i18n-extraction`
 deferral.
 
 #### Migration: irreversible
 
-Add an explicit reversal (a Flyway undo script, a Django reverse function, a
-Rails `up`/`down` split, an Alembic `downgrade()`), or document why the
-migration is intentionally one-way.
-
-#### Migration: non idempotent
-
-Add an `IF NOT EXISTS` guard to the `CREATE TABLE` / `ADD COLUMN` statement.
+Add an explicit reversal (a Django reverse function, a Rails `up`/`down`
+split, an Alembic `downgrade()`), or document why the migration is
+intentionally one-way.
 
 #### Migration: data and schema mixed
 
@@ -471,9 +482,23 @@ with an embedded host, **not** any `https://` URL, because the latter flags
 every legitimate reference to a well-known public API (this project's own
 source references `api.github.com` and `github.com` throughout).
 
+**Refined twice more after testing against real repos** (discourse/discourse,
+saleor/saleor): a private/reserved/documentation-range IPv4 address (RFC
+1918/5737/6598 — the exact kind of address an SSRF-guard's own denylist is
+built from, as in Discourse's `lib/final_destination/ssrf_detector.rb`) no
+longer counts as a hardcoded hostname, since it's essentially never a
+specific real deployment host; a `Product/W.X.Y.Z` version string (a
+dotted-quad but not an IP, e.g. a pinned `Chrome/141.0.0.0` User-Agent) is
+excluded; and IP/connection-string matches are skipped in files under a
+test/spec/fixture path, where they're overwhelmingly test data (two of the
+original false positives were literal IPs inside Saleor's own test
+fixtures). The Windows-path check also gained a lookbehind excluding a
+drive letter preceded by a backslash, after a Ruby regex anchor
+(`/\A:\w+:\Z/` in Discourse's `lib/excerpt_parser.rb`) collided with it.
+
 | Rule | Severity | What it catches |
 | :--- | :--- | :--- |
-| `portability/hardcoded-hostname` | warning | A literal non-loopback IPv4 address, or a DB/queue connection string with a literal (non-`localhost`) host, in source. |
+| `portability/hardcoded-hostname` | warning | A literal public (non-private/reserved/documentation-range) IPv4 address, or a DB/queue connection string with a literal (non-`localhost`, non-reserved) host, in non-test source. |
 | `portability/absolute-path` | warning | `/home/<user>/...`, `/Users/<user>/...`, or a `C:\...` Windows path in source. |
 | `portability/db-specific-sql` | warning | MySQL-only syntax (backtick quoting, `ENGINE=`, `AUTO_INCREMENT`) in a `.sql` file outside a migrations directory. |
 
