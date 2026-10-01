@@ -18,8 +18,8 @@ def test_portability_pack_always_detects():
 # -- portability/hardcoded-hostname --------------------------------------
 
 
-def test_literal_ip_address_is_flagged():
-    findings = _run({"app.py": 'HOST = "10.20.30.40"\n'})
+def test_literal_public_ip_address_is_flagged():
+    findings = _run({"app.py": 'HOST = "93.184.216.34"\n'})
     hits = [f for f in findings if f.rule_id == "portability/hardcoded-hostname"]
     assert len(hits) == 1
     assert hits[0].line == 1
@@ -27,6 +27,31 @@ def test_literal_ip_address_is_flagged():
 
 def test_loopback_ip_is_not_flagged():
     findings = _run({"app.py": 'HOST = "127.0.0.1"\n'})
+    assert not any(f.rule_id == "portability/hardcoded-hostname" for f in findings)
+
+
+def test_private_range_ip_is_not_flagged():
+    # RFC 1918 and friends show up constantly as SSRF-guard allow/deny
+    # lists and Docker/k8s-internal addresses, not a real, specific,
+    # non-portable deployment host.
+    findings = _run({"app.py": 'HOST = "10.20.30.40"\n'})
+    assert not any(f.rule_id == "portability/hardcoded-hostname" for f in findings)
+
+
+def test_documentation_range_ip_is_not_flagged():
+    findings = _run({"app.py": 'EXAMPLE = "203.0.113.5"\n'})
+    assert not any(f.rule_id == "portability/hardcoded-hostname" for f in findings)
+
+
+def test_version_string_shaped_like_an_ip_is_not_flagged():
+    # `Product/W.X.Y.Z` (a User-Agent/version pin) is a dotted-quad but
+    # not an IP address.
+    findings = _run({"app.py": 'UA = "Mozilla/5.0 Chrome/141.0.0.0 Safari/537.36"\n'})
+    assert not any(f.rule_id == "portability/hardcoded-hostname" for f in findings)
+
+
+def test_public_ip_in_a_test_file_is_not_flagged():
+    findings = _run({"tests/test_client.py": 'ip = "93.184.216.34"\n'})
     assert not any(f.rule_id == "portability/hardcoded-hostname" for f in findings)
 
 
@@ -51,7 +76,7 @@ def test_db_connection_string_to_localhost_is_not_flagged():
 
 
 def test_commented_out_ip_is_ignored():
-    findings = _run({"app.py": "# HOST = \"10.20.30.40\"\n"})
+    findings = _run({"app.py": "# HOST = \"93.184.216.34\"\n"})
     assert not any(f.rule_id == "portability/hardcoded-hostname" for f in findings)
 
 
@@ -76,6 +101,13 @@ def test_windows_path_is_flagged():
 
 def test_relative_path_is_not_flagged():
     findings = _run({"script.py": 'DATA_DIR = "./data"\n'})
+    assert not any(f.rule_id == "portability/absolute-path" for f in findings)
+
+
+def test_regex_anchor_escape_is_not_flagged_as_a_windows_path():
+    # `\A` / `\Z` are regex anchors (Ruby/Python/Perl), not a drive letter —
+    # found live in Discourse's lib/excerpt_parser.rb (`/\A:\w+:\Z/`).
+    findings = _run({"parser.rb": 'string.match?(/\\A:\\w+:\\Z/)\n'})
     assert not any(f.rule_id == "portability/absolute-path" for f in findings)
 
 
@@ -108,7 +140,7 @@ def test_portable_sql_is_not_flagged():
 
 def test_disabled_packs_turns_the_portability_pack_off():
     policy = AuditPolicy(disabled_packs=("portability",))
-    report = audit_repository("owner/repo", {"app.py": 'HOST = "10.20.30.40"\n'}, policy)
+    report = audit_repository("owner/repo", {"app.py": 'HOST = "93.184.216.34"\n'}, policy)
     assert not any(f.pack == "portability" for f in report.findings)
 
 

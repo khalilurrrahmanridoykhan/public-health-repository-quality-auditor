@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ipaddress
 import re
 
 from ..models import TOOL_URI, AuditPolicy, Finding
@@ -7,8 +8,12 @@ from .base import RepoView
 
 SOURCE_SUFFIXES = (".py", ".js", ".jsx", ".ts", ".tsx", ".java", ".rb")
 
-_IPV4_RE = re.compile(r"\b(?:\d{1,3}\.){3}\d{1,3}\b")
-_LOOPBACK_IPS = {"127.0.0.1", "0.0.0.0", "255.255.255.255"}
+# Excludes a match immediately preceded by "<letter>/" — the universal
+# `Product/X.Y.Z.W` shape of a User-Agent or version-pin string (e.g.
+# `Chrome/141.0.0.0`), which is a dotted-quad but not an IP address. A real
+# `scheme://<ip>` URL still matches: the two characters before the digits
+# there are "//", not "<letter>/".
+_IPV4_RE = re.compile(r"(?<![A-Za-z]/)\b(?:\d{1,3}\.){3}\d{1,3}\b")
 # Database/queue connection strings with a literal host embedded —
 # narrower and far less noisy than matching any https:// URL, which flags
 # every legitimate reference to a well-known public API (github.com,
@@ -23,9 +28,70 @@ _PLACEHOLDER_HOST_RE = re.compile(
 )
 
 _HOME_PATH_RE = re.compile(r"(?<![\w/])/(?:home|Users)/[A-Za-z0-9_.\-]+(?:/|\b)")
-_WINDOWS_PATH_RE = re.compile(r"\b[A-Za-z]:\\[^\s\"'`]+")
+# Excludes a drive letter immediately preceded by a backslash — almost
+# always a regex escape (`\A`, `\Z`, `\b`, `\w`, ...) rather than a real
+# Windows path; a genuine path's drive letter is preceded by a quote,
+# space, or start of string instead.
+_WINDOWS_PATH_RE = re.compile(r"(?<!\\)\b[A-Za-z]:\\[^\s\"'`]+")
 
 _MYSQL_ONLY_SQL_RE = re.compile(r"`|\bENGINE\s*=|\bAUTO_INCREMENT\b", re.IGNORECASE)
+
+# A path containing any of these is presumed test code — IP/hostname
+# literals there are overwhelmingly sample/mock data, not a real
+# non-portable deployment value (mirrors pii._is_synthetic_path).
+_TEST_PATH_MARKERS = ("test", "tests", "spec", "specs", "fixture", "fixtures")
+
+
+def _is_test_path(path: str) -> bool:
+    segments = {segment.lower() for segment in path.split("/")[:-1]}
+    name = path.rsplit("/", 1)[-1].lower()
+    return bool(segments & set(_TEST_PATH_MARKERS)) or any(
+        name.startswith(f"{marker}_") or name.endswith(f"_{marker}.py")
+        or name.endswith(f"_{marker}.rb")
+        for marker in ("test", "spec")
+    )
+
+
+# Special-use ranges Python's ipaddress module doesn't classify as
+# private/reserved on all versions, but IANA's own special-purpose
+# registry does: RFC 6598 (carrier-grade NAT) and the AS112 direct-
+# delegation block — the latter found live in Discourse's SSRF-guard
+# range table (lib/final_destination/ssrf_detector.rb), which Python's
+# stdlib doesn't recognise as special-use.
+_EXTRA_RESERVED_IPV4_NETWORKS = (
+    ipaddress.IPv4Network("100.64.0.0/10"),
+    ipaddress.IPv4Network("192.175.48.0/24"),
+)
+# Universally-recognised placeholder IPs that turn up in both examples and
+# real "test mode" code paths (e.g. Discourse's lookup_ips stubbing a DNS
+# result under Rails.env.test?) even outside a test/spec file.
+_PLACEHOLDER_IPV4 = {"1.2.3.4"}
+
+
+def _is_reserved_ipv4(ip: str) -> bool:
+    """Whether `ip` is in a private/reserved/special-use range (RFC 1918,
+    loopback, link-local, RFC 5737 documentation ranges, RFC 6598
+    carrier-grade NAT, ...). These show up constantly as SSRF-guard
+    allow/deny lists, network examples, and test fixtures — not as a
+    specific, real, non-portable deployment host, which is what this rule
+    is actually trying to catch."""
+    if ip in _PLACEHOLDER_IPV4:
+        return True
+    try:
+        address = ipaddress.IPv4Address(ip)
+    except ValueError:
+        return True  # not a real IPv4 address at all (e.g. a version string)
+    if (
+        address.is_private
+        or address.is_reserved
+        or address.is_loopback
+        or address.is_link_local
+        or address.is_multicast
+        or address.is_unspecified
+    ):
+        return True
+    return any(network.supernet_of(ipaddress.IPv4Network(f"{address}/32"))
+               for network in _EXTRA_RESERVED_IPV4_NETWORKS)
 
 
 _MIGRATION_DIR_NAMES = {"migration", "migrations", "migrate"}
@@ -57,6 +123,18 @@ class PortabilityPack:
     survive being deployed somewhere other than the author's own machine —
     the recurring reason a "works on my laptop" public-health tool never
     makes it to a second site. Applies to every repository.
+
+    `hardcoded-hostname`'s IP matching was refined after self-testing
+    against Discourse: a real SSRF-guard module (`lib/final_destination/
+    ssrf_detector.rb`) builds its private-IP-range denylist from literal
+    RFC 1918/5737/6598 addresses, and a User-Agent string pinned a browser
+    version (`Chrome/141.0.0.0`) that's a dotted-quad but not an IP at all.
+    Private/reserved/documentation-range addresses are now excluded (they're
+    security-reference data or test fixtures, not a real deployment host),
+    an obvious `Product/version` context is excluded, and IP/connection-
+    string matches are skipped entirely in files under a test/spec/fixture
+    path — mirroring the same false-positive class Phase 2's `pii-in-
+    example` and this project's own first hostname-matching draft both hit.
     """
 
     id = "portability"
@@ -72,7 +150,8 @@ class PortabilityPack:
                 content = repo.files.get(path)
                 if content is None:
                     continue
-                findings.extend(self._hostname_findings(path, content))
+                if not _is_test_path(path):
+                    findings.extend(self._hostname_findings(path, content))
                 findings.extend(self._absolute_path_findings(path, content))
             elif lower.endswith(".sql") and not _is_migrations_path(path):
                 content = repo.files.get(path)
@@ -92,7 +171,7 @@ class PortabilityPack:
                 continue
             for match in _IPV4_RE.finditer(line):
                 ip = match.group(0)
-                if ip in _LOOPBACK_IPS or (line_number, ip) in seen:
+                if _is_reserved_ipv4(ip) or (line_number, ip) in seen:
                     continue
                 seen.add((line_number, ip))
                 findings.append(
@@ -112,7 +191,11 @@ class PortabilityPack:
                 )
             for match in _CONNECTION_STRING_RE.finditer(line):
                 scheme, host = match.group(1), match.group(2)
-                if _PLACEHOLDER_HOST_RE.match(host) or (line_number, host) in seen:
+                if (
+                    _PLACEHOLDER_HOST_RE.match(host)
+                    or (re.fullmatch(r"(?:\d{1,3}\.){3}\d{1,3}", host) and _is_reserved_ipv4(host))
+                    or (line_number, host) in seen
+                ):
                     continue
                 seen.add((line_number, host))
                 findings.append(
