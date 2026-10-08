@@ -6,6 +6,7 @@ from pathlib import Path
 
 from .auditor import audit_repository
 from .policy import parse_policy
+from .standards import dpg_readiness, dpg_readiness_markdown
 
 
 # Suffixes whose content packs might actually need to read (README prose,
@@ -93,9 +94,11 @@ def main(argv: list[str] | None = None) -> None:
     )
     parser.add_argument(
         "--format",
-        choices=["md", "json", "sarif"],
+        choices=["md", "json", "sarif", "dpg-readiness"],
         default=None,
-        help="Output format for stdout (default: md, or json if --json is set).",
+        help="Output format for stdout (default: md, or json if --json is "
+        "set). `dpg-readiness` is a pre-check against the Digital Public "
+        "Goods Standard's 9 indicators, not a certification.",
     )
     parser.add_argument(
         "--sarif",
@@ -129,5 +132,7 @@ def main(argv: list[str] | None = None) -> None:
         print(json.dumps(report.to_dict(), indent=2))
     elif output_format == "sarif":
         print(json.dumps(report.to_sarif(), indent=2))
+    elif output_format == "dpg-readiness":
+        print(dpg_readiness_markdown(dpg_readiness(report)))
     else:
         print(report.to_markdown())
