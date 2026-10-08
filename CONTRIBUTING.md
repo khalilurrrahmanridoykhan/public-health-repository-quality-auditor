@@ -1,6 +1,6 @@
 # Contributing
 
-Contributions to checks, documentation, tests, and GitHub App behavior are welcome.
+Contributions to checks, documentation, tests, and GitHub App behavior are welcome. By participating, you're expected to follow the [Code of Conduct](CODE_OF_CONDUCT.md).
 
 ```bash
 python3 -m venv .venv
