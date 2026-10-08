@@ -21,6 +21,9 @@ export default function Home() {
         </p>
         <div className="actions">
           <a href="/dashboard">Open dashboard</a>
+          <a className="secondary" href="/demo">
+            Live demo
+          </a>
           <a href="https://github.com/apps/public-health-repo-auditor">
             View GitHub App
           </a>
