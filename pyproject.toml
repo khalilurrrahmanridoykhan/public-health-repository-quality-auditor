@@ -36,6 +36,9 @@ Issues = "https://github.com/khalilurrrahmanridoykhan/public-health-repository-q
 [tool.setuptools.packages.find]
 where = ["src"]
 
+[tool.setuptools.package-data]
+ph_repo_auditor = ["rulepacks/*.yml", "rulepacks/*.yaml"]
+
 [tool.pytest.ini_options]
 pythonpath = ["src"]
 testpaths = ["tests"]

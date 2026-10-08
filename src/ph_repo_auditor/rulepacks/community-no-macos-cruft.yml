@@ -1,0 +1,24 @@
+# A community rulepack: a simple, org-agnostic check that doesn't need a
+# line of Python. See rulepacks/README.md for the schema, and
+# tests/test_rulepacks.py for how a rulepack like this one is verified.
+id: community/no-macos-cruft
+version: "1.0.0"
+description: >-
+  Flags a committed macOS Finder metadata file (.DS_Store) — a common
+  accidental commit, especially from contributors who don't have it in
+  their global gitignore.
+rules:
+  - id: ds-store-committed
+    title: .DS_Store file committed
+    category: hygiene
+    severity: warning
+    type: presence
+    when: exists
+    file_globs:
+      - "**/.DS_Store"
+    message: >-
+      A macOS Finder metadata file (.DS_Store) is tracked in version
+      control.
+    fix: >-
+      Remove it (`git rm --cached '**/.DS_Store'`) and add `.DS_Store` to
+      `.gitignore` so it doesn't come back.
