@@ -14,10 +14,17 @@ def test_registry_defaults_to_every_detecting_pack():
     # hygiene, pii, and portability are cross-cutting — they always detect.
     # migration-safety is cross-cutting in spirit but still needs a
     # migration-framework marker (same as the platform packs), which this
-    # bare-README repo lacks.
+    # bare-README repo lacks. Bundled rulepacks (Phase 7) also always
+    # detect, same as pii/portability — a loaded rulepack applies by
+    # definition; whether its rules fire depends on the rule itself.
     repo = RepoView({"README.md": "hello"})
     active = PackRegistry().select(repo)
-    assert {pack.id for pack in active} == {"hygiene", "pii", "portability"}
+    assert {pack.id for pack in active} == {
+        "hygiene",
+        "pii",
+        "portability",
+        "rulepack:community/no-macos-cruft",
+    }
 
 
 def test_registry_rejects_unknown_pack_id():
@@ -35,7 +42,9 @@ def test_registry_can_select_a_subset_of_packs():
 def test_audit_repository_with_an_empty_registry_scores_zero_and_finds_nothing():
     repo_files = {"README.md": "Ethics. Privacy. Data provenance."}
     report = audit_repository(
-        "owner/study", repo_files, registry=PackRegistry(())
+        "owner/study",
+        repo_files,
+        registry=PackRegistry((), include_rulepacks=False),
     )
     assert report.results == []
     assert report.findings == ()
@@ -102,7 +111,7 @@ def test_pack_scores_do_not_average_with_hygiene():
                 )
             ]
 
-    registry = PackRegistry((HygienePack(), AlwaysFailsPack()))
+    registry = PackRegistry((HygienePack(), AlwaysFailsPack()), include_rulepacks=False)
     files = {
         "README.md": "Data provenance. Privacy. Ethics.",
         "LICENSE": None,
