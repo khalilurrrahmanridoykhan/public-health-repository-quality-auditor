@@ -7,6 +7,7 @@ from .openmrs import OpenmrsPack
 from .pii import PiiPack
 from .portability import PortabilityPack
 from .registry import DEFAULT_PACKS, PackRegistry
+from .rulepacks import Rulepack, RulepackPack, RulepackRule, load_rulepacks, parse_rulepack
 
 __all__ = [
     "Pack",
@@ -20,4 +21,9 @@ __all__ = [
     "PortabilityPack",
     "PackRegistry",
     "DEFAULT_PACKS",
+    "Rulepack",
+    "RulepackRule",
+    "RulepackPack",
+    "load_rulepacks",
+    "parse_rulepack",
 ]

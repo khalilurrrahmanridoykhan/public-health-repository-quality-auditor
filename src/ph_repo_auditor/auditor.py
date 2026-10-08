@@ -15,6 +15,7 @@ def audit_repository(
 ) -> AuditReport:
     policy = policy or AuditPolicy()
     registry = registry or PackRegistry()
+    policy_warnings = tuple(policy_warnings) + registry.rulepack_warnings
     repo = RepoView(files, policy.ignore_paths)
     active = tuple(
         pack
