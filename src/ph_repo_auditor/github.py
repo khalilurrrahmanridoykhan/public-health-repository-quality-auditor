@@ -19,6 +19,7 @@ from .packs.migration_safety import _is_relevant_migration_path
 from .packs.openmrs import _is_openmrs_relevant_path
 from .packs.pii import _is_pii_relevant_path
 from .packs.portability import _is_portability_relevant_path
+from .packs.rulepacks import rulepack_relevant_paths
 from .policy import parse_policy
 
 
@@ -95,20 +96,24 @@ class GitHubAppClient:
                 ("data_dictionary.md", "data-dictionary.md", "codebook.md")
             )
         }
+        rulepack_relevant = rulepack_relevant_paths(file_paths)
         pack_relevant = sorted(
-            path
-            for path in file_paths
-            if path.rsplit("/", 1)[-1] in FSH_CONFIG_NAMES
-            or path.endswith(".fsh")
-            or _is_fhir_relevant_json(path)
-            or path.rsplit("/", 1)[-1] in D2_CONFIG_NAMES
-            or path.rsplit("/", 1)[-1] == "package.json"
-            or _is_dhis2_relevant_source(path)
-            or _is_likely_dhis2_metadata_path(path)
-            or _is_openmrs_relevant_path(path)
-            or _is_pii_relevant_path(path)
-            or _is_relevant_migration_path(path)
-            or _is_portability_relevant_path(path)
+            {
+                path
+                for path in file_paths
+                if path.rsplit("/", 1)[-1] in FSH_CONFIG_NAMES
+                or path.endswith(".fsh")
+                or _is_fhir_relevant_json(path)
+                or path.rsplit("/", 1)[-1] in D2_CONFIG_NAMES
+                or path.rsplit("/", 1)[-1] == "package.json"
+                or _is_dhis2_relevant_source(path)
+                or _is_likely_dhis2_metadata_path(path)
+                or _is_openmrs_relevant_path(path)
+                or _is_pii_relevant_path(path)
+                or _is_relevant_migration_path(path)
+                or _is_portability_relevant_path(path)
+            }
+            | rulepack_relevant
         )
         selected = core_selected | set(pack_relevant[:MAX_PACK_FILES])
         files: dict[str, str | None] = {path: None for path in file_paths}
