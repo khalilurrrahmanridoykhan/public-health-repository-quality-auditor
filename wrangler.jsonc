@@ -14,16 +14,13 @@
     "enabled": true
   },
   // Audit-run history for Phase 6 (trend lines, org-wide fleet audits,
-  // badges). This repo doesn't provision the real D1 database for you —
-  // run `wrangler d1 create ph-repo-auditor-runs`, replace database_id
-  // below with the id it prints, then `wrangler d1 migrations apply DB
-  // --remote` before deploying. `wrangler d1 migrations apply DB --local`
-  // (no login needed) is enough for local dev.
+  // badges). `wrangler d1 migrations apply DB --remote` still needs to
+  // be run once against this real database before deploying.
   "d1_databases": [
     {
       "binding": "DB",
       "database_name": "ph-repo-auditor-runs",
-      "database_id": "REPLACE_AFTER_WRANGLER_D1_CREATE",
+      "database_id": "50387356-d63a-4ef3-85d9-463cceceac79",
       "migrations_dir": "migrations"
     }
   ]
