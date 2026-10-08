@@ -48,6 +48,7 @@ ph-repo-audit /path/to/research-repository --format json
 ph-repo-audit /path/to/research-repository --format sarif
 ph-repo-audit /path/to/research-repository --sarif findings.sarif   # write SARIF, still print markdown
 ph-repo-audit /path/to/research-repository --pack hygiene           # repeatable; default: every detected pack
+ph-repo-audit /path/to/research-repository --format dpg-readiness   # DPG Standard pre-check — see below
 ```
 
 ## Architecture: packs
@@ -547,6 +548,36 @@ over the Contents API — `github.py` reads every loaded rulepack's
 `file_globs` (`regex`/`json_key` rules only; `presence` rules don't need
 content) to decide what to fetch there too, so a rulepack behaves the
 same via a push/PR Check Run as it does locally.
+
+## DPG Standard readiness
+
+`ph-repo-audit . --format dpg-readiness` maps an audit to the
+[Digital Public Goods Standard](https://github.com/DPGAlliance/dpg-standard)'s
+9 indicators (quoted from the official `standard.md`, as of the 2025-06-26
+changelog entry — see [`standards.py`](src/ph_repo_auditor/standards.py)'s
+module docstring for the exact provenance). **This is a pre-check for a
+maintainer deciding whether they're ready to start a real submission — it
+is not a certification and does not replace the DPG Registry's own
+process.**
+
+Every indicator gets one of three honest states, never a claim that the
+indicator is "met":
+
+| Icon | Meaning |
+| :-- | :--- |
+| ✅ | An automated check relevant to this indicator found nothing. |
+| 🛑 | One did find something. |
+| ⚪ | No repository-content signal exists for this indicator at all — it needs the maintainer's own evidence (e.g. SDG relevance, legal compliance, a content-moderation policy — none of these are things a static scan over a repo's files could ever establish). |
+
+5 of the 9 indicators (2, 5, 7, 8, 9a) have a real automated signal; the
+other 6 (1, 3, 4, 6, 9b, 9c) are ⚪ by design — every `detail` explains why
+and what evidence the maintainer actually needs instead. Mapping to the
+other standards this plan originally scoped for Phase 7 — Digital Square's
+Global Goods Maturity Model, WHO SMART Guidelines L2/L3, and OpenHIE
+component conformance — is deferred; none of their indicator sets have
+been researched to the same standard of care this mapping was held to,
+and shipping a guess about what they require would be worse than not
+shipping it.
 
 ## Hosted fleet dashboard
 
