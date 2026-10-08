@@ -62,7 +62,10 @@ for all three). Four are cross-cutting, applying to any repository: `hygiene`
 (patient data / secrets / DB dumps committed to source control),
 `migration-safety` (Flyway, Prisma, Django, Rails, and Alembic database
 migrations), and `portability` (hardcoded hostnames/paths, engine-locked
-SQL). More platform packs are planned. Every pack emits `Finding`s
+SQL). On top of all of that, every `*.yml`/`*.yaml` file under
+`src/ph_repo_auditor/rulepacks/` is loaded automatically as its own
+no-Python-required **rulepack** (Phase 7) — see below. More platform packs
+are planned. Every pack emits `Finding`s
 (severity, category, file, line, rule ID, fix, docs link) in addition to
 `hygiene`'s point-scored `CheckResult`s, so output is available as
 Markdown, JSON, and [SARIF 2.1.0](https://sarifweb.azurewebsites.net/) for
@@ -516,6 +519,34 @@ relative to the project root.
 
 Use ANSI-standard SQL, or move engine-specific DDL into a proper migration
 where it's at least isolated and reviewable as such.
+
+## Community rulepacks
+
+A rulepack is a YAML file under
+[`src/ph_repo_auditor/rulepacks/`](src/ph_repo_auditor/rulepacks/) that
+expresses simple presence/regex/JSON-key checks without writing Python.
+Every file there is loaded automatically and becomes its own pack
+(`rulepack:<id>`) — adding one is a PR that touches only that directory
+plus a test fixture, no change to this codebase's engine. See
+[`rulepacks/README.md`](src/ph_repo_auditor/rulepacks/README.md) for the
+schema and how to contribute one; `--pack` and `disabled_packs` both work
+on rulepack ids the same way they do on any built-in pack.
+
+**Bundled today:** `community/no-macos-cruft` —
+`rule_id: community/no-macos-cruft/ds-store-committed` (warning) — flags a
+committed `.DS_Store` anywhere in the tree.
+
+**Scope, honestly:** this is a lightweight mechanism — three rule types,
+no code execution, no network access — for org-specific or simple
+cross-cutting checks a maintainer can write without touching Python. It
+is not a replacement for a real pack (FHIR/DHIS2/OpenMRS/...) when a check
+genuinely needs to parse XML, resolve a schema, or reason about more than
+"does this pattern appear in this file." The CLI reads every text-ish
+file regardless, but the GitHub App client fetches content selectively
+over the Contents API — `github.py` reads every loaded rulepack's
+`file_globs` (`regex`/`json_key` rules only; `presence` rules don't need
+content) to decide what to fetch there too, so a rulepack behaves the
+same via a push/PR Check Run as it does locally.
 
 ## Hosted fleet dashboard
 
