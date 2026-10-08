@@ -2,7 +2,7 @@ cff-version: 1.2.0
 message: "If you use this software, please cite it using the metadata below."
 title: "Public Health Repository Quality Auditor"
 type: software
-version: 0.3.0
+version: 0.4.0
 date-released: 2026-10-08
 license: MIT
 authors:
