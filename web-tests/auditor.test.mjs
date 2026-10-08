@@ -91,6 +91,54 @@ test("check runs include annotations and previous-score comparison", () => {
   assert.match(source, /Score change from previous audited commit/);
 });
 
+test("org-audit route audits an organization and reports pagination", () => {
+  const source = readFileSync(
+    new URL("../app/api/org-audit/route.ts", import.meta.url),
+    "utf8",
+  );
+  assert.match(source, /auditOrganization/);
+  assert.match(source, /nextPage/);
+});
+
+test("trend route reads stored run history for a repository", () => {
+  const source = readFileSync(
+    new URL("../app/api/trend/route.ts", import.meta.url),
+    "utf8",
+  );
+  assert.match(source, /getTrend/);
+  assert.match(source, /status: 503/);
+});
+
+test("badge route returns a shields.io endpoint payload", () => {
+  const source = readFileSync(
+    new URL("../app/api/badge/route.ts", import.meta.url),
+    "utf8",
+  );
+  assert.match(source, /schemaVersion/);
+  assert.match(source, /getLatestRun/);
+});
+
+test("report route exports the current audit as a downloadable Markdown file", () => {
+  const source = readFileSync(
+    new URL("../app/api/report/route.ts", import.meta.url),
+    "utf8",
+  );
+  assert.match(source, /auditAnyPublicRepository/);
+  assert.match(source, /Content-Disposition/);
+  assert.match(source, /text\/markdown/);
+});
+
+test("org-wide audit reads public repos with no App installation and caps page size for the Workers subrequest budget", () => {
+  const source = readFileSync(
+    new URL("../lib/github-app.ts", import.meta.url),
+    "utf8",
+  );
+  assert.match(source, /auditAnyPublicRepository/);
+  assert.match(source, /listOrgPublicRepositories/);
+  assert.match(source, /perPage = 8/);
+  assert.match(source, /fork && !repository\.archived/);
+});
+
 test("Marketplace webhook validates signatures and handles purchases", () => {
   const source = readFileSync(
     new URL("../app/api/webhooks/marketplace/route.ts", import.meta.url),

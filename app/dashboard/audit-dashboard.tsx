@@ -16,7 +16,10 @@ export function AuditDashboard() {
 
   useEffect(() => {
     fetch("/api/repositories")
-      .then((response) => response.json())
+      .then((response) => response.json() as Promise<{
+        repositories?: Repository[];
+        error?: string;
+      }>)
       .then((payload) => {
         setRepositories(payload.repositories ?? []);
         if (payload.error) setMessage(payload.error);
@@ -34,7 +37,12 @@ export function AuditDashboard() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ repository }),
       });
-      const payload = await response.json();
+      const payload = (await response.json()) as {
+        score?: number;
+        grade?: string;
+        passed?: boolean;
+        error?: string;
+      };
       if (!response.ok) throw new Error(payload.error ?? "Audit failed");
       setMessage(
         `${repository}: ${payload.score}/100 (${payload.grade}) — ${payload.passed ? "Pass" : "Needs work"}. The Check Run is now on GitHub.`,

@@ -1,4 +1,5 @@
 import { AuditDashboard } from "./audit-dashboard";
+import { OrgAudit } from "./org-audit";
 
 export const metadata = { title: "Dashboard · Public Health Repo Auditor" };
 
@@ -23,6 +24,16 @@ export default function DashboardPage() {
       </section>
       <section className="card">
         <AuditDashboard />
+      </section>
+      <section className="card">
+        <h2>Organization fleet audit</h2>
+        <p>
+          No installation needed — audits the hygiene checks (the 10 checks
+          above) across any GitHub organization&apos;s public repositories.
+          Platform packs (FHIR/DHIS2/OpenMRS/PII/migration-safety/
+          portability) are Python/CLI-only for now; see the README.
+        </p>
+        <OrgAudit />
       </section>
     </main>
   );

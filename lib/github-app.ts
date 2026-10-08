@@ -2,6 +2,7 @@ import { createHmac, createPrivateKey, timingSafeEqual } from "node:crypto";
 import { SignJWT } from "jose";
 import { parse } from "yaml";
 import { audit, policyFromObject } from "./auditor";
+import { getDb, recordRun, type RunSource } from "./db";
 
 const apiRoot = "https://api.github.com";
 const apiHeaders = {
@@ -82,15 +83,67 @@ async function githubFetch(
   return response;
 }
 
-export async function auditAndPublish(
-  installationId: number,
+/** Like `githubFetch`, but for repositories the App has no installation
+ * on — the org-wide fleet audit and the public demo both need to read
+ * arbitrary public repositories, not just ones an owner installed the
+ * App on. Works unauthenticated (60 requests/hour per IP); set
+ * `GITHUB_READONLY_TOKEN` (a plain PAT, no special scopes needed for
+ * public repo reads) to raise that to 5000/hour for real traffic. */
+async function publicGithubFetch(url: string, init: RequestInit = {}) {
+  const token = process.env.GITHUB_READONLY_TOKEN;
+  const response = await fetch(`${apiRoot}${url}`, {
+    ...init,
+    headers: {
+      ...apiHeaders,
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...(init.headers ?? {}),
+    },
+  });
+  if (!response.ok) {
+    throw new Error(`GitHub API ${url} failed: ${response.status}`);
+  }
+  return response;
+}
+
+/** Fetches a repository's tree at `headSha` plus README/policy content,
+ * parses the policy, and runs `audit()` — the part of auditing that's
+ * identical whether the caller has an App installation token (
+ * `auditAndPublish`) or is reading a public repo with no installation
+ * at all (`auditAnyPublicRepository`). `fetchFn` carries whichever
+ * auth (or none) the caller has. */
+/** Records a run for trend history, swallowing any failure — a missing
+ * or unreachable D1 binding (no database provisioned yet, a transient
+ * error) must never take down the actual audit it's recording. */
+async function recordRunQuietly(
+  repository: string,
+  commitSha: string,
+  report: { score: number; grade: string; passed: boolean },
+  source: RunSource,
+) {
+  try {
+    const db = await getDb();
+    if (!db) return;
+    await recordRun(db, {
+      repository,
+      commitSha,
+      ranAt: new Date().toISOString(),
+      score: report.score,
+      grade: report.grade,
+      passed: report.passed,
+      source,
+    });
+  } catch {
+    // Trend history is best-effort; the audit itself already succeeded.
+  }
+}
+
+async function auditTreeAt(
   repository: string,
   headSha: string,
+  fetchFn: (url: string) => Promise<Response>,
 ) {
-  const token = await installationToken(installationId);
-  const treeResponse = await githubFetch(
+  const treeResponse = await fetchFn(
     `/repos/${repository}/git/trees/${headSha}?recursive=1`,
-    token,
   );
   const treePayload = (await treeResponse.json()) as {
     tree: { path: string; type: string }[];
@@ -111,9 +164,8 @@ export async function auditAndPublish(
     ].includes(candidate.toLowerCase()),
   );
   for (const path of selectedPaths) {
-    const contentResponse = await githubFetch(
+    const contentResponse = await fetchFn(
       `/repos/${repository}/contents/${path}?ref=${headSha}`,
-      token,
     );
     const contentPayload = (await contentResponse.json()) as {
       content?: string;
@@ -151,6 +203,20 @@ export async function auditAndPublish(
     policyResult.policy,
     policyResult.warnings,
   );
+  return { report, paths };
+}
+
+export async function auditAndPublish(
+  installationId: number,
+  repository: string,
+  headSha: string,
+  source: RunSource = "webhook",
+) {
+  const token = await installationToken(installationId);
+  const { report, paths } = await auditTreeAt(repository, headSha, (url) =>
+    githubFetch(url, token),
+  );
+  await recordRunQuietly(repository, headSha, report, source);
   let previousScore: number | null = null;
   try {
     const commitResponse = await githubFetch(
@@ -182,9 +248,8 @@ export async function auditAndPublish(
       ? "\n\nPrevious audited commit: **not available**"
       : `\n\nScore change from previous audited commit: **${report.score - previousScore >= 0 ? "+" : ""}${report.score - previousScore}** (${previousScore} → ${report.score})`;
   const readmePath =
-    selectedPaths.find((path) =>
-      ["readme.md", "readme.rst"].includes(path.toLowerCase()),
-    ) ?? paths[0];
+    paths.find((path) => ["readme.md", "readme.rst"].includes(path.toLowerCase())) ??
+    paths[0];
   const MAX_ANNOTATIONS = 50;
   const annotatable = readmePath
     ? report.results.filter((result) => !result.passed)
@@ -275,5 +340,135 @@ export async function auditPublicRepository(repository: string) {
     selected.installationId,
     selected.fullName,
     commit.sha,
+    "manual",
   );
+}
+
+/** Audits any public repository, with no GitHub App installation
+ * required and no Check Run posted — the org-wide fleet audit and the
+ * public demo both need to read repositories the maintainer never
+ * installed this App on. Returns the report plus the commit it ran
+ * against, so callers can record a trend-history row. */
+export async function auditAnyPublicRepository(
+  repository: string,
+  source: RunSource = "demo",
+) {
+  const repoResponse = await publicGithubFetch(`/repos/${repository}`);
+  const repoPayload = (await repoResponse.json()) as {
+    default_branch: string;
+  };
+  const commitResponse = await publicGithubFetch(
+    `/repos/${repository}/commits/${encodeURIComponent(repoPayload.default_branch)}`,
+  );
+  const commit = (await commitResponse.json()) as { sha: string };
+  const { report } = await auditTreeAt(repository, commit.sha, publicGithubFetch);
+  await recordRunQuietly(repository, commit.sha, report, source);
+  return { report, commitSha: commit.sha };
+}
+
+/** The next page number from a GitHub API response's RFC 5988 `Link`
+ * header, or `null` on the last page. */
+function nextPageFromLinkHeader(response: Response): number | null {
+  const header = response.headers.get("link");
+  if (!header) return null;
+  const next = header
+    .split(",")
+    .map((part) => part.trim())
+    .find((part) => part.endsWith('rel="next"'));
+  const match = next?.match(/[?&]page=(\d+)/);
+  return match ? Number(match[1]) : null;
+}
+
+export type OrgPage = {
+  repositories: { fullName: string; defaultBranch: string; htmlUrl: string }[];
+  nextPage: number | null;
+};
+
+/** One page of an org's public, non-fork, non-archived repositories —
+ * forks and archives are excluded because an org-wide fleet audit is
+ * about the org's own maintained work, not its copies of other
+ * people's repos or ones it no longer touches. */
+export async function listOrgPublicRepositories(
+  org: string,
+  page = 1,
+  perPage = 8,
+): Promise<OrgPage> {
+  const response = await publicGithubFetch(
+    `/orgs/${encodeURIComponent(org)}/repos?type=public&per_page=${perPage}&page=${page}&sort=full_name`,
+  );
+  const payload = (await response.json()) as {
+    fork: boolean;
+    archived: boolean;
+    full_name: string;
+    default_branch: string;
+    html_url: string;
+  }[];
+  return {
+    repositories: payload
+      .filter((repository) => !repository.fork && !repository.archived)
+      .map((repository) => ({
+        fullName: repository.full_name,
+        defaultBranch: repository.default_branch,
+        htmlUrl: repository.html_url,
+      })),
+    nextPage: nextPageFromLinkHeader(response),
+  };
+}
+
+export type OrgAuditResult = {
+  repository: string;
+  htmlUrl: string;
+  score: number;
+  grade: string;
+  passed: boolean;
+  commitSha: string;
+  error?: undefined;
+};
+
+export type OrgAuditFailure = {
+  repository: string;
+  htmlUrl: string;
+  error: string;
+};
+
+/** Audits one page of an org's public repositories. `perPage` is kept
+ * small by default (see `listOrgPublicRepositories`): each repository
+ * takes ~4 GitHub API calls (repo info, commit, tree, README/policy
+ * content), and Cloudflare Workers caps subrequests per request at 50
+ * on the free tier — this is the "paginated... if large" the plan calls
+ * for, not an arbitrary choice. One failed repository doesn't fail the
+ * whole page; it's reported alongside the successes. */
+export async function auditOrganization(
+  org: string,
+  page = 1,
+): Promise<{
+  results: (OrgAuditResult | OrgAuditFailure)[];
+  nextPage: number | null;
+}> {
+  const { repositories, nextPage } = await listOrgPublicRepositories(org, page);
+  const results = await Promise.all(
+    repositories.map(async (repository): Promise<OrgAuditResult | OrgAuditFailure> => {
+      try {
+        const { report, commitSha } = await auditAnyPublicRepository(
+          repository.fullName,
+          "org-audit",
+        );
+        return {
+          repository: repository.fullName,
+          htmlUrl: repository.htmlUrl,
+          score: report.score,
+          grade: report.grade,
+          passed: report.passed,
+          commitSha,
+        };
+      } catch (error) {
+        return {
+          repository: repository.fullName,
+          htmlUrl: repository.htmlUrl,
+          error: error instanceof Error ? error.message : "Audit failed",
+        };
+      }
+    }),
+  );
+  return { results, nextPage };
 }
