@@ -517,6 +517,64 @@ relative to the project root.
 Use ANSI-standard SQL, or move engine-specific DDL into a proper migration
 where it's at least isolated and reviewable as such.
 
+## Hosted fleet dashboard
+
+The dashboard (`/dashboard`) and a public live demo (`/demo`) run on top of
+the **hygiene checks only** — the hosted Cloudflare Worker has never run the
+Python pack architecture (see each pack's "Scope decision" above); this is
+the same existing constraint, not a new one. A repository that scores low
+here can still pass every platform pack's checks via the CLI.
+
+- **Organization-wide audit** — `/dashboard`'s "Organization fleet audit"
+  (`GET /api/org-audit?org=<name>&page=<n>`) audits an org's public,
+  non-fork, non-archived repositories with **no App installation
+  required**, reading them over the public GitHub API. Paginated at 8
+  repositories per page: each repository audit takes ~4 GitHub API calls,
+  and Cloudflare Workers caps subrequests per request at 50 on the free
+  tier — this is the plan's "paginated... if large," not an arbitrary
+  choice. Set `GITHUB_READONLY_TOKEN` (a plain PAT, no special scopes) to
+  raise the unauthenticated 60/hour GitHub rate limit to 5000/hour for real
+  traffic.
+- **Trend lines** — every audit (webhook push/PR, manual dashboard audit,
+  org-wide audit, or the public demo) is recorded to a D1 database;
+  `/dashboard/trend?repository=owner/repo` (`GET /api/trend?repository=...`)
+  shows score-over-time once a repository has 1+ recorded runs.
+- **Badge** — `GET /api/badge?repository=owner/repo` returns a
+  [shields.io endpoint](https://shields.io/badges/endpoint-badge) payload
+  from the latest recorded run (`lightgrey`/"not yet audited" until one
+  exists). Embed with:
+  ```markdown
+  ![PH repo quality](https://img.shields.io/endpoint?url=https://public-health-repo-auditor.khalilur-ridoy.workers.dev/api/badge?repository=owner/repo)
+  ```
+- **Report export** — `GET /api/report?repository=owner/repo` runs a fresh
+  audit and returns it as a downloadable `.md` file, suitable to attach to
+  a DPG registry or Digital Square submission. **PDF export is deferred**:
+  Workers have no headless-Chrome equivalent without Cloudflare's separate,
+  paid Browser Rendering product, and Markdown already satisfies the
+  "attachable conformance report" need without new infrastructure.
+- **Public demo** (`/demo`) — audits four independently-maintained global
+  goods already verified against this auditor during development
+  (`HL7/fhir-ips`, `HL7/US-Core`, `openmrs/openmrs-module-idgen`,
+  `openmrs/openmrs-esm-patient-registration`), live, on every visit not
+  covered by a cached run from the last hour. They score low on the
+  hygiene checklist specifically — a FHIR IG has no "data dictionary" in
+  the research-reproducibility sense — which is exactly why the page
+  explains that distinction rather than hiding it.
+
+**Provisioning the database** (not done by this repo, since it needs your
+own Cloudflare login):
+
+```bash
+wrangler login
+wrangler d1 create ph-repo-auditor-runs
+# copy the printed database_id into wrangler.jsonc's d1_databases entry
+wrangler d1 migrations apply DB --remote
+```
+
+For local development, `wrangler d1 migrations apply DB --local` needs no
+login — it's how this feature was built and tested without cloud
+credentials.
+
 ## Audit guidance
 
 ### Project documentation
@@ -571,7 +629,8 @@ appropriate, or why review was not required.
 
 ## Hosted service
 
-- [Onboarding and manual-audit dashboard](https://public-health-repo-auditor.khalilur-ridoy.workers.dev/dashboard)
+- [Dashboard — manual audits + organization fleet audit](https://public-health-repo-auditor.khalilur-ridoy.workers.dev/dashboard)
+- [Live public demo](https://public-health-repo-auditor.khalilur-ridoy.workers.dev/demo)
 - [Privacy policy](https://public-health-repo-auditor.khalilur-ridoy.workers.dev/privacy)
 - [Terms of service](https://public-health-repo-auditor.khalilur-ridoy.workers.dev/terms)
 - [Support](https://public-health-repo-auditor.khalilur-ridoy.workers.dev/support)
