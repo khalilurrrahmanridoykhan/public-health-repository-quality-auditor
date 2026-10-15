@@ -5,7 +5,7 @@ export default function PrivacyPage() {
     <main className="legal">
       <p className="eyebrow">Public Health Repo Auditor</p>
       <h1>Privacy policy</h1>
-      <p>Last updated: July 27, 2026</p>
+      <p>Last updated: October 9, 2026</p>
       <h2>Data processed</h2>
       <p>
         The App reads repository metadata, file paths, and selected documentation
@@ -15,8 +15,16 @@ export default function PrivacyPage() {
       <h2>Data retention</h2>
       <p>
         Audit results are written to GitHub Check Runs. The hosted service does
-        not maintain a separate database of repository content or installation
-        access tokens.
+        not maintain a database of repository content, file contents, audit
+        findings text, or installation access tokens.
+      </p>
+      <p>
+        A separate run-history database records, for trend and badge features,
+        only: repository name, commit SHA, timestamp, numeric score, letter
+        grade, pass/fail status, and which feature triggered the run (webhook,
+        manual audit, org-wide audit, or the public demo). No file content, no
+        finding details, and no personal or patient data are ever written to
+        this database.
       </p>
       <h2>Private repositories</h2>
       <p>
